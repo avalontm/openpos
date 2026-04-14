@@ -14,25 +14,22 @@ import { BgBox } from "../../shared/components/BgBox.js";
 import { theme, fmt } from "../../shared/theme.js";
 import { printTicket, type TicketData } from "../../utils/printer/index.js";
 import { PayModal, type Method } from "./components/PayModal.js";
+import { useLayout, TooSmallOverlay } from "../../shared/useLayout.js";
 
 type PanelType = "search" | "grid" | "ticket" | "pay" | "reports";
 
 export function PosScreen({ onLogout }: { onLogout?: () => void }) {
-  const { exit } = useApp();
+  const { exit }  = useApp();
+  const layout    = useLayout();
   const { add, nextTicket, total, ticketNum, items } = useCart();
-  const { user } = useAuth();
+  const { user }  = useAuth();
 
-  const [cols, setCols] = React.useState(process.stdout.columns || 120);
-  const [rows, setRows] = React.useState(process.stdout.rows || 30);
-
-  React.useEffect(() => {
-    const onResize = () => {
-      setCols(process.stdout.columns || 120);
-      setRows(process.stdout.rows || 30);
-    };
-    process.stdout.on("resize", onResize);
-    return () => { process.stdout.off("resize", onResize); };
-  }, []);
+  const {
+    cols, rows,
+    ticketW, gridW, gridCols, itemH, divW,
+    headerH, searchH, footerH, subHdrH, hintsH,
+    mainH, gridH,
+  } = layout;
 
   const [products,    setProducts]    = React.useState<Product[]>([]);
   const [query,       setQuery]       = React.useState("");
@@ -41,20 +38,25 @@ export function PosScreen({ onLogout }: { onLogout?: () => void }) {
   const [time,        setTime]        = React.useState("");
   const [barcode,     setBarcode]     = React.useState("");
 
+  // ── Clock ─────────────────────────────────────────────────────────────────
   React.useEffect(() => {
-    const tick = () => setTime(new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }));
+    const tick = () => setTime(
+      new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })
+    );
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
 
+  // ── Load products ─────────────────────────────────────────────────────────
   React.useEffect(() => {
     initDb();
     setProducts(db.select().from(productsTable).all());
   }, []);
 
+  // ── Input handling ────────────────────────────────────────────────────────
   useInput((input, key) => {
-    // ── ESCANEO DE CÓDIGO DE BARRAS ──────────────────────────────────────
+    // Barcode scanner (numpad while grid is active)
     if (activePanel === "grid" && key.return && barcode.length >= 4) {
       const qtyMatch = barcode.match(/^(\d+)[*\s](.+)$/);
       const qty  = qtyMatch ? parseInt(qtyMatch[1]!) : 1;
@@ -62,45 +64,50 @@ export function PosScreen({ onLogout }: { onLogout?: () => void }) {
       const product = products.find(p => p.barcode === code || p.sku === code);
       if (product) {
         if (product.active === 0) {
-          setLastMsg(`✗ "${product.name}" está inactivo`);
+          setLastMsg(`x "${product.name}" esta inactivo`);
         } else if (product.stock < qty) {
-          setLastMsg(`✗ Stock insuficiente (disponible: ${product.stock})`);
+          setLastMsg(`x Stock insuficiente (disponible: ${product.stock})`);
         } else {
           for (let i = 0; i < qty; i++) add(product);
           const unitLabel = product.unitType === "pza" ? "pza" : product.unitType;
-          const qtyStr = qty > 1 ? `${qty}× ` : "";
-          setLastMsg(`✓ ${qtyStr}${product.name.substring(0, 12)} ${unitLabel} $${product.price}`);
+          const qtyStr    = qty > 1 ? `${qty}x ` : "";
+          setLastMsg(`v ${qtyStr}${product.name.substring(0, 12)} ${unitLabel} $${product.price}`);
         }
       } else {
-        setLastMsg(`✗ Código "${code}" no encontrado`);
+        setLastMsg(`x Codigo "${code}" no encontrado`);
       }
       setBarcode("");
       return;
     }
+
     if (activePanel === "grid" && /^[0-9* ]$/.test(input)) {
       setBarcode(b => b + input);
       return;
     }
 
-    // ── NAVEGACIÓN GLOBAL ────────────────────────────────────────────────
-    if (key.tab)   { setActivePanel(p => (p === "search" || p === "grid") ? "ticket" : "grid"); return; }
-    if (key.escape && activePanel === "ticket")        { setActivePanel("grid"); return; }
-    if (input === "/" && activePanel !== "search")     { setActivePanel("search"); return; }
+    // Global navigation
+    if (key.tab) {
+      setActivePanel(p => (p === "search" || p === "grid") ? "ticket" : "grid");
+      return;
+    }
+    if (key.escape && activePanel === "ticket")                           { setActivePanel("grid");    return; }
+    if (input === "/" && activePanel !== "search")                        { setActivePanel("search");  return; }
     if (input === "r" && activePanel !== "pay" && activePanel !== "reports") { setActivePanel("reports"); return; }
-    if (input === "l") { if (onLogout) onLogout(); return; }
+    if (input === "l")                                                    { if (onLogout) onLogout();  return; }
     if (input === "q" && key.ctrl) exit();
   });
 
+  // ── Confirm payment ───────────────────────────────────────────────────────
   function confirmPay(method: Method, receivedVal = 0, changeVal = 0) {
-    const cartState  = useCart.getState();
-    const cartItems  = cartState.items;
-    if (cartItems.length === 0) { setLastMsg("✗ Carrito vacío"); return; }
+    const cartState = useCart.getState();
+    const cartItems = cartState.items;
+    if (cartItems.length === 0) { setLastMsg("x Carrito vacio"); return; }
 
-    const t           = cartState.total();
-    const sub         = cartState.subtotal();
-    const taxVal      = t - sub;
-    const tno         = fmt.ticket(ticketNum);
-    const itemCount   = cartItems.reduce((sum, i) => sum + i.qty, 0);
+    const t        = cartState.total();
+    const sub      = cartState.subtotal();
+    const taxVal   = t - sub;
+    const tno      = fmt.ticket(ticketNum);
+    const itemCount = cartItems.reduce((sum, i) => sum + i.qty, 0);
 
     db.insert(sales).values({
       ticket:    tno,
@@ -113,7 +120,7 @@ export function PosScreen({ onLogout }: { onLogout?: () => void }) {
       method,
       status:    "completed",
       items:     JSON.stringify(cartItems),
-      itemCount: itemCount,
+      itemCount,
       createdAt: new Date().toISOString(),
       createdBy: user?.name || "Cajero",
     }).run();
@@ -131,7 +138,9 @@ export function PosScreen({ onLogout }: { onLogout?: () => void }) {
       ticket:   tno,
       date:     new Date().toLocaleString("es-MX"),
       employee: user?.name || "Cajero",
-      items:    cartItems.map(i => ({ sku: i.sku, name: i.name, price: i.price, qty: i.qty, unitType: i.unitType })),
+      items:    cartItems.map(i => ({
+        sku: i.sku, name: i.name, price: i.price, qty: i.qty, unitType: i.unitType,
+      })),
       subtotal: sub,
       tax:      taxVal,
       discount: 0,
@@ -145,67 +154,64 @@ export function PosScreen({ onLogout }: { onLogout?: () => void }) {
 
     nextTicket();
     setQuery("");
-    setLastMsg(`✓ Venta ${tno} · ${fmt.money(t)} · ${method}`);
+    setLastMsg(`v Venta ${tno} · ${fmt.money(t)} · ${method}`);
   }
 
-  // ── Dimensiones ──────────────────────────────────────────────────────────
-  const TICKET_W = 26;
-  const DIV_W    = 1;
-  const gridW    = cols - TICKET_W - DIV_W;
+  // ── Derived state ─────────────────────────────────────────────────────────
+  const itemCount       = items.reduce((a, i) => a + i.qty, 0);
+  const totalAmount     = total();
+  const isSearchActive  = activePanel === "search";
+  const isGridActive    = activePanel === "grid";
+  const isTicketActive  = activePanel === "ticket";
 
-  const H_HEADER = 1;
-  const H_SEARCH = 1;
-  const H_FOOTER = 1;
-  const mainH    = rows - H_HEADER - H_SEARCH - H_FOOTER;
-
-  const H_SUBHDR = 1;
-  const H_HINTS  = 1;
-  const gridH    = mainH - H_SUBHDR - H_HINTS;
-
-  const itemCount    = items.reduce((a, i) => a + i.qty, 0);
-  const totalAmount  = total();
-  const isSearchActive = activePanel === "search";
-  const isGridActive   = activePanel === "grid";
-  const isTicketActive = activePanel === "ticket";
-
-  // Mensaje de status: color e icono
-  const msgColor = lastMsg.startsWith("✓") ? theme.green
-                 : lastMsg.startsWith("✗") ? theme.red
+  const msgColor = lastMsg.startsWith("v") ? theme.green
+                 : lastMsg.startsWith("x") ? theme.red
                  : theme.textMuted;
+
+  // ── PayModal positioning — centered in the grid panel ────────────────────
+  const payModalLeft = Math.max(0, Math.floor((gridW - 36) / 2));
+  const payModalTop  = headerH + searchH + Math.floor((mainH - 22) / 2);
+
+  // ── Too small guard ───────────────────────────────────────────────────────
+  if (layout.tooSmall) return <TooSmallOverlay layout={layout} />;
 
   return (
     <Box flexDirection="column" width={cols} height={rows}>
 
-      {/* ── HEADER ─────────────────────────────────────────────────────── */}
+      {/* ── HEADER ───────────────────────────────────────────────────────── */}
       <BgBox variant="header" flexDirection="row" width={cols} paddingX={1}>
         <Box justifyContent="space-between" width={cols - 2}>
 
-          {/* Izquierda: nombre sistema + usuario */}
+          {/* Left: system name + user */}
           <Box flexDirection="row" gap={1}>
             <Text color={theme.bg} bold>▸ OpenPos</Text>
             <Text color={theme.bg} dimColor>│</Text>
             <Text color={theme.bg}>{user?.name || "Cajero"}</Text>
           </Box>
 
-          {/* Centro: ticket + items */}
+          {/* Center: ticket + items — hide detail on compact terminals */}
           <Box flexDirection="row" gap={2}>
             <Text color={theme.bg} bold>{fmt.ticket(ticketNum)}</Text>
             {itemCount > 0 && (
               <>
                 <Text color={theme.bg} dimColor>·</Text>
                 <Text color={theme.bg}>{itemCount} {itemCount === 1 ? "item" : "items"}</Text>
-                <Text color={theme.bg} dimColor>·</Text>
-                <Text color={theme.bg} bold>{fmt.money(totalAmount)}</Text>
+                {layout.widthTier !== "compact" && (
+                  <>
+                    <Text color={theme.bg} dimColor>·</Text>
+                    <Text color={theme.bg} bold>{fmt.money(totalAmount)}</Text>
+                  </>
+                )}
               </>
             )}
           </Box>
 
-          {/* Derecha: hora */}
+          {/* Right: time */}
           <Text color={theme.bg}>{time}</Text>
         </Box>
       </BgBox>
 
-      {/* ── SEARCH ─────────────────────────────────────────────────────── */}
+      {/* ── SEARCH BAR ───────────────────────────────────────────────────── */}
       <BgBox variant="section" flexDirection="row" width={cols} paddingX={1}>
         <Box flexDirection="row" width={cols - 2} gap={1}>
           <Text color={isSearchActive ? theme.green : theme.textDim} bold>
@@ -224,28 +230,31 @@ export function PosScreen({ onLogout }: { onLogout?: () => void }) {
                   const product = products.find(p => p.barcode === code || p.sku === code);
                   if (product) {
                     if (product.active === 0) {
-                      setLastMsg(`✗ "${product.name}" está inactivo`);
+                      setLastMsg(`x "${product.name}" esta inactivo`);
                     } else if (product.stock < qty) {
-                      setLastMsg(`✗ Stock insuficiente (disponible: ${product.stock})`);
+                      setLastMsg(`x Stock insuficiente (disponible: ${product.stock})`);
                     } else {
                       for (let i = 0; i < qty; i++) add(product);
                       const unitLabel = product.unitType === "pza" ? "pza" : product.unitType;
-                      const qtyStr = qty > 1 ? `${qty}× ` : "";
-                      setLastMsg(`✓ ${qtyStr}${product.name.substring(0, 12)} ${unitLabel} $${product.price}`);
+                      const qtyStr    = qty > 1 ? `${qty}x ` : "";
+                      setLastMsg(`v ${qtyStr}${product.name.substring(0, 12)} ${unitLabel} $${product.price}`);
                     }
                   } else {
-                    setLastMsg(`✗ Código "${code}" no encontrado`);
+                    setLastMsg(`x Codigo "${code}" no encontrado`);
                   }
                 }
                 setQuery("");
                 setActivePanel("grid");
               }}
-              placeholder="Buscar producto o código: 4*7501234560014"
+              placeholder={
+                layout.widthTier === "compact"
+                  ? "Buscar o codigo..."
+                  : "Buscar producto o codigo: 4*7501234560014"
+              }
               focus={isSearchActive}
             />
           </Box>
-          {/* Conteo de resultados */}
-          {query && (
+          {query && layout.widthTier !== "compact" && (
             <>
               <Text color={theme.textDim}>│</Text>
               <Text color={theme.textMuted}>
@@ -259,13 +268,13 @@ export function PosScreen({ onLogout }: { onLogout?: () => void }) {
         </Box>
       </BgBox>
 
-      {/* ── MAIN ───────────────────────────────────────────────────────── */}
+      {/* ── MAIN AREA ────────────────────────────────────────────────────── */}
       <Box flexDirection="row" height={mainH}>
 
-        {/* ── Panel productos ──────────────────────────────────────────── */}
+        {/* ── Products panel ───────────────────────────────────────────── */}
         <Box flexDirection="column" width={gridW} height={mainH}>
 
-          {/* Subheader */}
+          {/* Sub-header */}
           <BgBox variant="section" flexDirection="row" width={gridW} paddingX={1}>
             <Box justifyContent="space-between" width={gridW - 2}>
               <Box flexDirection="row" gap={1}>
@@ -289,25 +298,33 @@ export function PosScreen({ onLogout }: { onLogout?: () => void }) {
             </Box>
           </BgBox>
 
-          {/* Grid */}
+          {/* Product grid */}
           <Box width={gridW} height={gridH} paddingX={1}>
             <ProductGrid
               products={products}
               query={query}
-              onSelect={p => { add(p); setLastMsg(`✓ ${p.name} · ${fmt.money(p.price)}`); }}
+              onSelect={p => {
+                add(p);
+                setLastMsg(`v ${p.name} · ${fmt.money(p.price)}`);
+              }}
               active={isGridActive}
               width={gridW - 4}
               height={gridH}
+              cols={gridCols}
+              itemH={itemH}
             />
           </Box>
 
-          {/* Hints */}
+          {/* Hints bar */}
           <BgBox variant="section" flexDirection="row" width={gridW} paddingX={1}>
             <Box justifyContent="space-between" width={gridW - 2}>
               <Text color={theme.textDim}>
                 {isGridActive
-                  ? "↑↓←→ navegar  Enter agregar  Tab ticket  / buscar"
-                  : "/ buscar  ↑↓ navegar  Tab ticket"}
+                  ? layout.widthTier === "compact"
+                    ? "1/2 navegar  Enter agregar  Tab ticket"
+                    : "↑↓←→ navegar  Enter agregar  Tab ticket  / buscar"
+                  : "/ buscar  ↑↓ navegar  Tab ticket"
+                }
               </Text>
               <Box flexDirection="row" gap={2}>
                 <Text color={theme.textDim}>
@@ -322,12 +339,12 @@ export function PosScreen({ onLogout }: { onLogout?: () => void }) {
         </Box>
 
         {/* ── Divider ──────────────────────────────────────────────────── */}
-        <Box width={DIV_W} height={mainH} flexDirection="column">
+        <Box width={divW} height={mainH} flexDirection="column">
           <Text color={theme.textDim}>{"│\n".repeat(mainH)}</Text>
         </Box>
 
-        {/* ── Panel ticket ─────────────────────────────────────────────── */}
-        <Box width={TICKET_W} height={mainH}>
+        {/* ── Ticket panel ─────────────────────────────────────────────── */}
+        <Box width={ticketW} height={mainH}>
           <Ticket
             active={isTicketActive}
             onPay={() => setActivePanel("pay")}
@@ -336,41 +353,48 @@ export function PosScreen({ onLogout }: { onLogout?: () => void }) {
         </Box>
       </Box>
 
-      {/* ── FOOTER ─────────────────────────────────────────────────────── */}
+      {/* ── FOOTER ───────────────────────────────────────────────────────── */}
       <BgBox variant="section" flexDirection="row" width={cols} paddingX={1}>
         <Box justifyContent="space-between" width={cols - 2}>
 
-          {/* Estado de conexión */}
+          {/* Connection status */}
           <Box flexDirection="row" gap={1}>
             <Text color={theme.green}>●</Text>
-            <Text color={theme.textMuted}>Online</Text>
+            {layout.widthTier !== "compact" && (
+              <Text color={theme.textMuted}>Online</Text>
+            )}
           </Box>
 
-          {/* Panel activo indicator */}
+          {/* Active panel indicators */}
           <Box flexDirection="row" gap={1}>
             {(["search", "grid", "ticket"] as PanelType[]).map(p => (
               <Text key={p} color={activePanel === p ? theme.green : theme.textDim}>
                 {activePanel === p ? "◉" : "○"}
                 {" "}
-                <Text color={activePanel === p ? theme.white : theme.textDim}>
-                  {p === "search" ? "buscar" : p === "grid" ? "productos" : "ticket"}
-                </Text>
+                {layout.widthTier !== "compact" && (
+                  <Text color={activePanel === p ? theme.white : theme.textDim}>
+                    {p === "search" ? "buscar" : p === "grid" ? "productos" : "ticket"}
+                  </Text>
+                )}
               </Text>
             ))}
           </Box>
 
-          {/* Mensaje de último evento */}
+          {/* Last event message */}
           <Text color={msgColor}>
-            {lastMsg || <Text color={theme.textDim}>Listo</Text>}
+            {lastMsg
+              ? fmt.trunc(lastMsg, layout.widthTier === "compact" ? 20 : 40)
+              : <Text color={theme.textDim}>Listo</Text>
+            }
           </Text>
         </Box>
       </BgBox>
 
-      {/* ── MODAL COBRO ────────────────────────────────────────────────── */}
+      {/* ── PAY MODAL ────────────────────────────────────────────────────── */}
       <PayModal
         active={activePanel === "pay"}
-        marginLeft={Math.floor((gridW - 36) / 2)}
-        marginTop={H_HEADER + H_SEARCH + Math.floor((mainH - 22) / 2)}
+        marginLeft={payModalLeft}
+        marginTop={payModalTop}
         onConfirm={(method, received, change) => {
           confirmPay(method, received, change);
           setActivePanel("search");
@@ -378,9 +402,7 @@ export function PosScreen({ onLogout }: { onLogout?: () => void }) {
         onCancel={() => setActivePanel("ticket")}
       />
 
-      {/* ── REPORTES
-
-      {/* ── REPORTES ───────────────────────────────────────────────────── */}
+      {/* ── REPORTS SCREEN ───────────────────────────────────────────────── */}
       <ReportsScreen
         rows={rows}
         cols={cols}

@@ -10,40 +10,35 @@ type Props = {
   active:   boolean;
   width:    number;
   height:   number;
+  cols:     number;   // grid columns — injected from useLayout
+  itemH:    number;   // rows per card — injected from useLayout
 };
 
-// ── Constantes de layout ──────────────────────────────────────────────────────
-const COLS      = 3;
-const ITEM_H    = 5;  // filas por tarjeta
-const SCROLLBAR = 2;  // columnas reservadas para el scrollbar derecho
+const SCROLLBAR = 2;
 
-// ── Categorías ────────────────────────────────────────────────────────────────
 const CAT_COLOR: Record<string, string> = {
-  BEB: theme.blue,
-  ALI: theme.amber,
-  BOT: theme.cyan,
-  LAC: theme.purple,
-  GEN: theme.textSec,
-  FRU: theme.green,
-  CAR: theme.red,
-  LIM: theme.orange,
+  BEB: theme.blue,   ALI: theme.amber,  BOT: theme.cyan,   LAC: theme.purple,
+  GEN: theme.textSec, FRU: theme.green,  CAR: theme.red,    LIM: theme.orange,
 };
 const CAT_ICON: Record<string, string> = {
   BEB: "◆", ALI: "◈", BOT: "◇", LAC: "◉",
   GEN: "○", FRU: "◍", CAR: "◼", LIM: "◌",
 };
 const CAT_LABEL: Record<string, string> = {
-  BEB: "Bebidas",  ALI: "Alimentos", BOT: "Botanas",  LAC: "Lácteos",
+  BEB: "Bebidas",  ALI: "Alimentos", BOT: "Botanas",  LAC: "Lacteos",
   GEN: "General",  FRU: "Frutas",    CAR: "Carnes",   LIM: "Limpieza",
 };
 
-// ── Scrollbar vertical ────────────────────────────────────────────────────────
-// Dibuja un scrollbar de `trackH` filas indicando la posición scrollRow/totalRows
-function Scrollbar(props: { scrollRow: number; totalRows: number; visibleRows: number; trackH: number }) {
+// ── Scrollbar ─────────────────────────────────────────────────────────────────
+function Scrollbar(props: {
+  scrollRow:   number;
+  totalRows:   number;
+  visibleRows: number;
+  trackH:      number;
+}) {
   const { scrollRow, totalRows, visibleRows, trackH } = props;
 
   if (totalRows <= visibleRows) {
-    // No hace falta scrollbar — track vacío
     return (
       <Box flexDirection="column" width={SCROLLBAR}>
         {Array.from({ length: trackH }).map((_, i) => (
@@ -53,9 +48,7 @@ function Scrollbar(props: { scrollRow: number; totalRows: number; visibleRows: n
     );
   }
 
-  // Tamaño del thumb proporcional a la fracción visible
-  const thumbH = Math.max(1, Math.round((visibleRows / totalRows) * trackH));
-  // Posición del thumb
+  const thumbH   = Math.max(1, Math.round((visibleRows / totalRows) * trackH));
   const maxOffset = trackH - thumbH;
   const thumbPos  = Math.round((scrollRow / Math.max(1, totalRows - visibleRows)) * maxOffset);
 
@@ -64,22 +57,16 @@ function Scrollbar(props: { scrollRow: number; totalRows: number; visibleRows: n
     return "▒";
   });
 
-  // Flechas arriba/abajo en los extremos
   if (trackH >= 3) {
-    lines[0]          = scrollRow > 0                          ? "▲" : "╷";
-    lines[trackH - 1] = scrollRow + visibleRows < totalRows   ? "▼" : "╵";
+    lines[0]          = scrollRow > 0                           ? "▲" : "╷";
+    lines[trackH - 1] = scrollRow + visibleRows < totalRows    ? "▼" : "╵";
   }
 
   return (
     <Box flexDirection="column" width={SCROLLBAR} alignItems="center">
-      {lines.map((ch, i) => {
-        const isThumb = ch === "█";
-        return (
-          <Text key={i} color={isThumb ? theme.textSec : theme.textDim}>
-            {ch}
-          </Text>
-        );
-      })}
+      {lines.map((ch, i) => (
+        <Text key={i} color={ch === "█" ? theme.textSec : theme.textDim}>{ch}</Text>
+      ))}
     </Box>
   );
 }
@@ -92,7 +79,7 @@ function StockBar(props: { stock: number; max: number; width: number; low: boole
   const col    = low ? theme.red : stock > max * 0.5 ? theme.green : theme.amber;
   return (
     <Text>
-      <Text color={col}>{"▰".repeat(filled)}</Text>
+      <Text color={col}>{" ▰".repeat(filled)}</Text>
       <Text color={theme.textDim}>{"▱".repeat(empty)}</Text>
     </Text>
   );
@@ -111,8 +98,10 @@ function CatBadge(props: { category: string; selected: boolean }) {
   );
 }
 
-// ── Componente principal ──────────────────────────────────────────────────────
-export function ProductGrid({ products, query, onSelect, active, width, height }: Props) {
+// ── Main component ────────────────────────────────────────────────────────────
+export function ProductGrid({
+  products, query, onSelect, active, width, height, cols: COLS, itemH: ITEM_H,
+}: Props) {
   const [cursor,    setCursor]    = React.useState(0);
   const [scrollRow, setScrollRow] = React.useState(0);
 
@@ -128,7 +117,11 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
 
   React.useEffect(() => { setCursor(0); setScrollRow(0); }, [query]);
 
-  // Filas visibles (descontar 1 fila para la barra de paginación inferior)
+  // Clamp cursor when cols changes (e.g. terminal resize changes grid columns)
+  React.useEffect(() => {
+    setCursor(c => Math.min(c, Math.max(0, filtered.length - 1)));
+  }, [COLS, filtered.length]);
+
   const visibleRows = Math.max(1, Math.floor((height - 1) / ITEM_H));
 
   const maxStock = React.useMemo(() =>
@@ -136,23 +129,21 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
     [filtered]
   );
 
-  // Construir filas
   const allRows: Product[][] = React.useMemo(() => {
     const rows: Product[][] = [];
     for (let i = 0; i < filtered.length; i += COLS)
       rows.push(filtered.slice(i, i + COLS));
     return rows;
-  }, [filtered]);
+  }, [filtered, COLS]);
 
   const totalRows = allRows.length;
 
-  // ── Mover scroll para mantener cursor visible ────────────────────────────
   const clampScroll = React.useCallback((nextCursor: number, currentScroll: number) => {
     const row = Math.floor(nextCursor / COLS);
-    if (row < currentScroll)              return row;
+    if (row < currentScroll)               return row;
     if (row >= currentScroll + visibleRows) return row - visibleRows + 1;
     return currentScroll;
-  }, [visibleRows]);
+  }, [visibleRows, COLS]);
 
   useInput((input, key) => {
     if (!active) return;
@@ -161,10 +152,9 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
 
     const currentRow = Math.floor(cursor / COLS);
     const currentCol = cursor % COLS;
-    let next    = cursor;
+    let next       = cursor;
     let nextScroll = scrollRow;
 
-    // ── Navegación fila/columna ──────────────────────────────────────────
     if (key.upArrow || input === "1") {
       if (currentRow > 0) {
         next = cursor - COLS;
@@ -202,7 +192,6 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
       }
     }
 
-    // ── PageUp / PageDown ────────────────────────────────────────────────
     if (key.pageUp) {
       const targetRow = Math.max(0, currentRow - visibleRows);
       next       = targetRow * COLS + currentCol;
@@ -217,24 +206,12 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
       nextScroll = Math.min(Math.max(0, totalRows - visibleRows), scrollRow + visibleRows);
     }
 
-    // ── Home / End ───────────────────────────────────────────────────────
-    if (key.ctrl && key.upArrow) {
-      next       = 0;
-      nextScroll = 0;
-    }
-    if (key.ctrl && key.downArrow) {
-      next       = len - 1;
-      nextScroll = Math.max(0, totalRows - visibleRows);
-    }
-
-    // ── Seleccionar ──────────────────────────────────────────────────────
     if (key.return || input === "4") {
       onSelect(filtered[cursor]!);
       return;
     }
 
     if (next !== cursor || nextScroll !== scrollRow) {
-      // Para pageUp/Down el scroll ya viene calculado arriba
       const finalScroll = (key.pageUp || key.pageDown)
         ? nextScroll
         : clampScroll(next, scrollRow);
@@ -243,34 +220,32 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
     }
   });
 
-  // ── Dimensiones ───────────────────────────────────────────────────────────
-  // Ancho disponible para el grid = width - scrollbar
+  // ── Dimensions ────────────────────────────────────────────────────────────
   const gridW = width - SCROLLBAR;
   const colW  = Math.floor(gridW / COLS);
 
   const visibleSlice = allRows.slice(scrollRow, scrollRow + visibleRows);
+  const trackH       = visibleRows * ITEM_H;
 
-  // Altura del track del scrollbar = visibleRows * ITEM_H líneas
-  const trackH = visibleRows * ITEM_H;
-
-  // Paginación
   const currentPage = Math.floor(scrollRow / visibleRows) + 1;
   const totalPages  = Math.max(1, Math.ceil(totalRows / visibleRows));
 
-  // ── Estado vacío ──────────────────────────────────────────────────────────
+  // ── Empty state ───────────────────────────────────────────────────────────
   if (!filtered.length) {
-    const emptyW   = Math.min(60, colW * COLS);
-    const divider  = "╌".repeat(emptyW);
-    const mainMsg  = query
-      ? `○  Sin resultados para "${query}"`
-      : "○  No hay productos disponibles";
-    const hintMsg  = "Intenta con otro nombre, SKU o código de barras";
+    const emptyW  = Math.min(60, colW * COLS);
+    const divider = "╌".repeat(emptyW);
     return (
       <Box flexDirection="column" alignItems="center" justifyContent="center" width={width} height={height}>
         <Box width={emptyW} justifyContent="center"><Text color={theme.textDim}>{divider}</Text></Box>
-        <Box width={emptyW} justifyContent="center"><Text color={theme.textMuted}>{mainMsg}</Text></Box>
+        <Box width={emptyW} justifyContent="center">
+          <Text color={theme.textMuted}>
+            {query ? `○  Sin resultados para "${query}"` : "○  No hay productos disponibles"}
+          </Text>
+        </Box>
         {query && (
-          <Box width={emptyW} justifyContent="center"><Text color={theme.textDim}>{hintMsg}</Text></Box>
+          <Box width={emptyW} justifyContent="center">
+            <Text color={theme.textDim}>Intenta con otro nombre, SKU o codigo de barras</Text>
+          </Box>
         )}
         <Box width={emptyW} justifyContent="center"><Text color={theme.textDim}>{divider}</Text></Box>
       </Box>
@@ -280,10 +255,8 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
   return (
     <Box flexDirection="column" height={height}>
 
-      {/* ── Grid + Scrollbar ──────────────────────────────────────────── */}
+      {/* Grid + Scrollbar */}
       <Box flexDirection="row" height={trackH} flexGrow={0}>
-
-        {/* Columnas de tarjetas */}
         <Box flexDirection="column" width={gridW}>
           {visibleSlice.map((row, ri) => {
             const absRi = scrollRow + ri;
@@ -300,6 +273,9 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
                   const innerW   = colW - 4;
                   const barW     = Math.max(4, Math.floor(innerW * 0.55));
 
+                  // Extra row content when card is tall enough
+                  const showExtraRow = ITEM_H >= 6;
+
                   return (
                     <Box
                       key={p.sku}
@@ -313,13 +289,13 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
                         : theme.bgActive
                       }
                     >
-                      {/* Fila 1: categoría + SKU */}
+                      {/* Row 1: category + SKU */}
                       <Box justifyContent="space-between">
                         <CatBadge category={p.category} selected={sel} />
                         <Text color={sel ? theme.textMuted : theme.textDim}>{p.sku}</Text>
                       </Box>
 
-                      {/* Fila 2: nombre */}
+                      {/* Row 2: name */}
                       <Text
                         color={inactive ? theme.textDim : sel ? theme.white : theme.textPri}
                         bold={sel}
@@ -328,21 +304,18 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
                         {sel ? "▸ " : "  "}{fmt.trunc(p.name, innerW - 2)}
                       </Text>
 
-                      {/* Fila 3: precio + estado */}
+                      {/* Row 3: price + stock status */}
                       <Box justifyContent="space-between">
-                        <Text
-                          color={inactive ? theme.textDim : sel ? theme.greenBr : theme.green}
-                          bold={sel}
-                        >
+                        <Text color={inactive ? theme.textDim : sel ? theme.greenBr : theme.green} bold={sel}>
                           {fmt.money(p.price)}
                         </Text>
                         {inactive           && <Text color={theme.textDim}>inactivo</Text>}
                         {!inactive && isOut && <Text color={theme.red}  bold>AGOTADO</Text>}
                         {!inactive && isLow && !isOut && <Text color={theme.amber}>▲ bajo</Text>}
-                        {!inactive && !isLow && !isOut && <Text color={theme.textDim}>×{stock}</Text>}
+                        {!inactive && !isLow && !isOut && <Text color={theme.textDim}>x{stock}</Text>}
                       </Box>
 
-                      {/* Fila 4: barra de stock + unidad */}
+                      {/* Row 4: stock bar + unit */}
                       <Box justifyContent="space-between">
                         {inactive || isOut
                           ? <Text color={theme.textDim}>{"▱".repeat(barW)}</Text>
@@ -352,11 +325,28 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
                           {p.unitType === "pza" ? "pza" : p.unitType ?? "pza"}
                         </Text>
                       </Box>
+
+                      {/* Row 5 (tall only): cost margin */}
+                      {showExtraRow && (
+                        <Box justifyContent="space-between">
+                          <Text color={theme.textDim}>
+                            {"costo "}<Text color={theme.textMuted}>{fmt.money(p.cost ?? 0)}</Text>
+                          </Text>
+                          {p.cost && p.price > 0 && (
+                            <Text color={theme.textDim}>
+                              {"margen "}
+                              <Text color={theme.textMuted}>
+                                {Math.round(((p.price - p.cost) / p.price) * 100)}%
+                              </Text>
+                            </Text>
+                          )}
+                        </Box>
+                      )}
                     </Box>
                   );
                 })}
 
-                {/* Relleno columnas vacías */}
+                {/* Empty column fillers */}
                 {row.length < COLS &&
                   Array.from({ length: COLS - row.length }).map((_, ei) => (
                     <Box key={`empty-${ei}`} width={colW} />
@@ -367,7 +357,6 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
           })}
         </Box>
 
-        {/* Scrollbar */}
         <Scrollbar
           scrollRow={scrollRow}
           totalRows={totalRows}
@@ -376,40 +365,29 @@ export function ProductGrid({ products, query, onSelect, active, width, height }
         />
       </Box>
 
-      {/* ── Barra de paginación ────────────────────────────────────────── */}
+      {/* Pagination bar */}
       <Box justifyContent="space-between" width={width} paddingX={1}>
-        {/* Izquierda: posición cursor */}
         <Text color={theme.textDim}>
-          {"#"}
-          <Text color={theme.textMuted}>{cursor + 1}</Text>
-          {"/"}
-          <Text color={theme.textDim}>{filtered.length}</Text>
+          {"#"}<Text color={theme.textMuted}>{cursor + 1}</Text>
+          {"/"}<Text color={theme.textDim}>{filtered.length}</Text>
         </Text>
 
-        {/* Centro: páginas con indicador visual */}
         <Box gap={0}>
-          {Array.from({ length: totalPages }).map((_, i) => {
-            const isCurrent = i === currentPage - 1;
-            return (
-              <Text
-                key={i}
-                color={isCurrent ? theme.green : theme.textDim}
-              >
-                {isCurrent ? "●" : "○"}
-              </Text>
-            );
-          })}
+          {Array.from({ length: totalPages }).map((_, i) => (
+            <Text key={i} color={i === currentPage - 1 ? theme.green : theme.textDim}>
+              {i === currentPage - 1 ? "●" : "○"}
+            </Text>
+          ))}
           <Text color={theme.textDim}>
-            {"  "}pág <Text color={theme.textMuted}>{currentPage}</Text>/{totalPages}
+            {"  "}<Text color={theme.textMuted}>{currentPage}</Text>/{totalPages}
           </Text>
         </Box>
 
-        {/* Derecha: atajos */}
         <Text color={theme.textDim}>
           <Text color={theme.textMuted}>PgUp</Text>
           {"/"}
           <Text color={theme.textMuted}>PgDn</Text>
-          {" página"}
+          {" pagina"}
         </Text>
       </Box>
 

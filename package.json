@@ -1,21 +1,22 @@
 {
-  "name": "pos-tui",
+  "name": "openpos",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "bun run src/app.tsx",
     "seed": "bun run src/db/seed.ts",
     "start": "bun run src/app.tsx",
-    "import": "bun run src/db/import-csv.ts"
+    "import": "bun run src/db/import-csv.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
     "ink": "7.0.0",
     "ink-text-input": "^6.0.0",
     "node-thermal-printer": "^4.6.0",
-    "printer": "^0.4.0",
+    "pngjs": "^7.0.0",
     "react": "19",
-    "react-devtools-core": "^7.0.1",
+    "terminal-image": "^4.3.0",
     "zustand": "^4.5.2"
   },
   "devDependencies": {

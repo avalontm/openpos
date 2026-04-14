@@ -1,4 +1,4 @@
-# OPENPOS
+# OPENPOS v22.14.0
 
 Sistema de punto de venta para terminal (TUI) construido con Bun, Ink, Zustand y Drizzle ORM.
 
@@ -10,20 +10,23 @@ Sistema de punto de venta para terminal (TUI) construido con Bun, Ink, Zustand y
 ### Pantalla Principal
 ![POS](images/screen2.png)
 
+### Pantalla de Reportes
+![Reports](images/screen3.png)
+
 ## Características
 
-- 🎫 Gestión de ventas y tickets
-- 📦 Inventario con códigos de barras
-- 🧾 Impresión térmica de tickets (incluye banner desde imagen)
-- 📊 Reportes de ventas
-- 👤 Autenticación de empleados
-- ⚖️ Soporte para diferentes unidades (pza, kg, lt, ml, etc.)
-- 🖥️ Interfaz CLI para importación/exportación de productos
+- Gestión de ventas y tickets
+- Inventario con códigos de barras
+- Impresión térmica de tickets (incluye banner desde imagen)
+- Reportes de ventas
+- Autenticación de empleados
+- Soporte para diferentes unidades (pza, kg, lt, ml, etc.)
+- Interfaz CLI para importación/exportación de productos
 
 ## Requisitos
 
 - Bun (última versión)
-- Node.js 18+
+- Node.js 22+
 - Impresora térmica (opcional)
 
 ## Instalación
@@ -168,37 +171,12 @@ bun build src/app.tsx --compile --outfile pos.exe
 
 El ejecutable `pos.exe` queda en el directorio del proyecto. Los comandos CLI funcionan directamente con el ejecutable.
 
-## Estructura del Proyecto
+## GitHub
 
-```
-openpos/
-├── src/
-│   ├── app.tsx              # Punto de entrada
-│   ├── cli.ts               # Interfaz CLI
-│   ├── db/                  # Base de datos
-│   │   ├── client.ts
-│   │   ├── schema.ts
-│   │   ├── seed.ts
-│   │   └── import-csv.ts
-│   ├── modules/pos/        # Módulos POS
-│   │   ├── PosScreen.tsx
-│   │   ├── LoginScreen.tsx
-│   │   ├── ReportsScreen.tsx
-│   │   └── components/
-│   ├── store/              # Estado (Zustand)
-│   │   ├── cart.ts
-│   │   └── auth.ts
-│   ├── shared/              # Componentes compartidos
-│   └── utils/printer/      # Sistema de impresión
-├── assets/
-│   └── banner.png          # Banner para tickets
-├── images/
-│   ├── screen1.png         # Screenshot login
-│   └── screen2.png         # Screenshot POS
-├── config.json              # Configuración de impresora
-└── build.bat                # Script de compilación
-```
+Repositorio: https://github.com/avalontm/openpos.git
 
 ## Licencia
 
-MIT
+Licencia MIT - Copyright (c) 2025 avalontm
+
+Proyecto desarrollado por AvalonTM

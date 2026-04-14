@@ -1,93 +1,88 @@
 import React from "react";
-import { render, useApp } from "ink";
-import { PosScreen } from "./modules/pos/PosScreen.js";
-import { LoginScreen } from "./modules/pos/LoginScreen.js";
-import { initDb } from "./db/client.js";
-import { runCLI } from "./cli.js";
-import path from "path";
+import { render } from "ink";
+import { PosScreen }     from "./modules/pos/PosScreen.js";
+import { LoginScreen }   from "./modules/pos/LoginScreen.js";
+import { LoadingScreen, preloadBanner, type LoadTask } from "./modules/pos/LoadingScreen.js";
+import { initDb }        from "./db/client.js";
+import { runCLI }        from "./cli.js";
+import path              from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname  = path.dirname(__filename);
 
-// Check for CLI mode first
+// ── Capture terminal size BEFORE switching to alternate screen ───────────────
+// Windows Terminal reports correct dimensions in the main buffer.
+// After switching to alternate screen, size detection can fail temporarily.
+const initialCols = process.stdout.columns || 80;
+const initialRows = process.stdout.rows || 24;
+
+// Store globally for useLayout hook to use as initial values
+(globalThis as unknown as { __TERM_COLS__: number; __TERM_ROWS__: number }).__TERM_COLS__ = initialCols;
+(globalThis as unknown as { __TERM_COLS__: number; __TERM_ROWS__: number }).__TERM_ROWS__ = initialRows;
+
+// ── CLI mode — skip interactive UI entirely ────────────────────────────────────
 const isCliMode = await runCLI();
+if (isCliMode === true) process.exit(0);
 
-// If CLI mode handled the command, don't start interactive mode
-if (isCliMode === true) {
-  process.exit(0);
-}
+// ── Alternate screen buffer ────────────────────────────────────────────────────
+process.stdout.write("\x1b[?1049h");  // Activate alternate screen
+process.stdout.write("\x1b[3J");       // Clear screen + scrollback
+process.stdout.write("\x1b[H");        // Cursor to home (0,0)
+// Write space to force terminal to commit to dimensions
+process.stdout.write(" \r");
 
-// Activar alternate screen buffer para evitar scrollback
-process.stdout.write("\x1b[?1049h");  // Cambiar a alternate screen
-process.stdout.write("\x1b[2J");       // Limpiar pantalla
-process.stdout.write("\x1b[H");        // Mover cursor a inicio
-
-initDb();
-
-// Cleanup al salir de la app
 function cleanup() {
-  process.stdout.write("\x1b[?1049l");  // Restaurar screen buffer original
+  process.stdout.write("\x1b[?1049l");
 }
-process.on("exit", cleanup);
-process.on("SIGINT", cleanup);
+process.on("exit",   cleanup);
+process.on("SIGINT",  cleanup);
 process.on("SIGTERM", cleanup);
 
-async function checkAndInstallFont() {
-  if (process.platform !== "win32") return;
-
-  const fontRegistryPath = "HKCU:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
-  const fontName = "JetBrains Mono (TrueType)";
-
-  try {
-    const { execSync } = await import("child_process");
-    
-    const result = execSync(
-      `powershell -Command "Get-ItemProperty -Path 'Registry::${fontRegistryPath}' -Name '${fontName}' -ErrorAction SilentlyContinue"`,
-      { encoding: "utf8", stdio: "pipe" }
-    );
-
-    if (result.includes(fontName)) {
-      return true;
-    }
-    
-    const fontPath = path.join(__dirname, "..", "assets", "fonts", "JetBrainsMono-Regular.ttf");
-    const userFontDir = path.join(process.env.LOCALAPPDATA || "", "Microsoft", "Windows", "Fonts");
-    
-    try {
-      const fs = await import("fs");
-      if (!fs.existsSync(userFontDir)) {
-        fs.mkdirSync(userFontDir, { recursive: true });
-      }
-      
-      const destPath = path.join(userFontDir, "JetBrainsMono-Regular.ttf");
-      fs.copyFileSync(fontPath, destPath);
-      
-      execSync(
-        `powershell -Command "Set-ItemProperty -Path 'Registry::${fontRegistryPath}' -Name '${fontName}' -Value 'JetBrainsMono-Regular.ttf' -Type String"`,
-        { stdio: "pipe" }
-      );
-      
-      console.log("\n\x1b[32m[OK]\x1b[0m JetBrains Mono font installed. Please restart terminal.\n");
-    } catch (e) {
-      console.log("\n\x1b[33m[WARN]\x1b[0m Font not found. Run: powershell -ExecutionPolicy Bypass -File scripts/install-font.ps1\n");
-    }
-    
-    return true;
-  } catch {
-    return false;
-  }
-}
+// ── App shell ──────────────────────────────────────────────────────────────────
+type AppState = "loading" | "login" | "pos";
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = React.useState(false);
+  const [state, setState] = React.useState<AppState>("loading");
 
-  if (!isLoggedIn) {
-    return <LoginScreen onLogin={() => setIsLoggedIn(true)} />;
+  // ── Loading tasks — define what to preload ─────────────────────────────────
+  // Each task runs sequentially and is shown in the loading screen list.
+  // Add more tasks here (config validation, network checks, etc.) as needed.
+  const tasks = React.useMemo<LoadTask[]>(() => [
+    {
+      label: "Initializing database",
+      run:   async () => { initDb(); },
+    },
+    {
+      label: "Loading assets",
+      run:   async () => {
+        const cols = process.stdout.columns || 80;
+        await preloadBanner(cols);
+      },
+    },
+    {
+      label: "Checking configuration",
+      run:   async () => {
+        // Add any config validation here
+        await new Promise(r => setTimeout(r, 80));
+      },
+    },
+  ], []);
+
+  if (state === "loading") {
+    return (
+      <LoadingScreen
+        tasks={tasks}
+        onReady={() => setState("login")}
+      />
+    );
   }
 
-  return <PosScreen onLogout={() => setIsLoggedIn(false)} />;
+  if (state === "login") {
+    return <LoginScreen onLogin={() => setState("pos")} />;
+  }
+
+  return <PosScreen onLogout={() => setState("login")} />;
 }
 
-await checkAndInstallFont();
 render(<App />);

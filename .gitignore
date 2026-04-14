@@ -37,3 +37,6 @@ fonts/
 *.tmp
 temp/
 nul
+
+# Agent rules (for AI coding assistants)
+AGENTS.md

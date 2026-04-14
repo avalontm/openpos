@@ -1,0 +1,22 @@
+{
+  "bg": "#0d1117",
+  "bgPanel": "#161b22",
+  "bgSection": "#1c2128",
+  "bgActive": "#21262d",
+  "bgInput": "#0d1117",
+  "white": "#e6edf3",
+  "textPri": "#c9d1d9",
+  "textSec": "#8b949e",
+  "textMuted": "#484f58",
+  "textDim": "#30363d",
+  "bgDim": "#21262d",
+  "green": "#3fb950",
+  "greenBr": "#56d364",
+  "amber": "#e3b341",
+  "amberBr": "#f0c060",
+  "blue": "#58a6ff",
+  "cyan": "#39c5cf",
+  "red": "#f85149",
+  "purple": "#bc8cff",
+  "orange": "#ffa657"
+}
