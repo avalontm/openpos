@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    container_name: openpos-interactive
+    volumes:
+      - .:/app
+      - node_modules_vol:/app/node_modules
+    # By default, running 'docker-compose up' will start the 
+    # interactive UI (the entrypoint with no arguments).
+    # To run CLI commands, use: docker-compose run --rm app [args]
+    # Example: docker-compose run --rm app add user juan 1234
+    stdin_open: true
+    tty: true
+    environment:
+      - DATABASE_URL=pos.db
+
+volumes:
+  node_modules_vol:

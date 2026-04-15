@@ -27,6 +27,7 @@ Sistema de punto de venta para terminal (TUI) construido con Bun, Ink, Zustand y
 
 - Bun (última versión)
 - Node.js 22+
+- Docker y Docker Compose (opcional)
 - Impresora térmica (opcional)
 
 ## Instalación
@@ -38,6 +39,21 @@ npm install
 # Inicializar base de datos
 bun run seed
 ```
+
+## Docker
+
+Si prefieres usar Docker, el proyecto ya está configurado para ejecutarse en contenedores:
+
+```bash
+# Construir la imagen
+docker-compose build
+
+# Iniciar modo interactivo (Punto de Venta)
+docker-compose up app
+```
+
+> [!IMPORTANT]
+> Para interactuar con la interfaz TUI (terminal) dentro de Docker, es necesario que el servicio tenga `tty: true` y `stdin_open: true` (ya configurado en `docker-compose.yml`).
 
 ## Base de Datos
 
@@ -79,16 +95,18 @@ bun run dev
 
 ### Línea de comandos (CLI)
 
-```bash
-pos.exe --help              # Mostrar ayuda
-pos.exe --version           # Mostrar versión
-pos.exe import products     # Importar productos desde CSV
-pos.exe export products     # Exportar productos a CSV
-pos.exe seed                # Insertar productos de ejemplo
-pos.exe add user <username> <pin> [--role]  # Agregar usuario
-pos.exe config get          # Ver configuración
-pos.exe config set <key> <value>  # Actualizar configuración
-```
+Puedes ejecutar los comandos directamente o a través de Docker:
+
+| Comando | Ejecución Local | Ejecución Docker |
+|---------|-----------------|------------------|
+| Ayuda | `pos.exe --help` | `docker-compose run --rm app --help` |
+| Versión | `pos.exe --version` | `docker-compose run --rm app --version` |
+| Importar | `pos.exe import products` | `docker-compose run --rm app import products` |
+| Exportar | `pos.exe export products` | `docker-compose run --rm app export products` |
+| Seed | `pos.exe seed` | `docker-compose run --rm app seed` |
+| Usuario | `pos.exe add user <user> <pin>` | `docker-compose run --rm app add user <user> <pin>` |
+| Config Get | `pos.exe config get` | `docker-compose run --rm app config get` |
+| Config Set | `pos.exe config set <k> <v>` | `docker-compose run --rm app config set <k> <v>` |
 
 ### Importar Productos
 

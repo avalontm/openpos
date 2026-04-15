@@ -1,0 +1,15 @@
+node_modules/
+bun.lock
+.git/
+.gitignore
+pos.db
+src/db/pos.db
+dist/
+Dockerfile
+docker-compose.yml
+README.md
+CONTRIBUTING.md
+.vscode/
+.idea/
+*.log
+*.tmp
