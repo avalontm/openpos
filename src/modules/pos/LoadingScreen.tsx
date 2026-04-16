@@ -1,78 +1,58 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
-import { theme } from "../../shared/theme.js";
-import { useLayout } from "../../shared/useLayout.js";
+import { theme } from "@openpos/shared";
+import { useLayout } from "../../shared/useLayout";
 
-// ── Paths ──────────────────────────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
-export const BANNER_PATH = path.resolve(__dirname, "../../../assets/logo.png");
+const __dirname = path.dirname(__filename);
+export const BANNER_PATH = path.resolve(__dirname, "../../../../assets/logo.png");
 
-// ── Shared banner cache — loaded once, reused by LoginScreen ──────────────────
 export let cachedBannerLines: string[] | null = null;
+export let cachedBannerCols: number = 0;
+
+export async function reloadBanner(cols: number): Promise<string[] | null> {
+  cachedBannerLines = null;
+  cachedBannerCols = 0;
+  return null;
+}
 
 export async function preloadBanner(cols: number): Promise<void> {
   if (cachedBannerLines !== null) return;
-  if (!existsSync(BANNER_PATH)) return;
-
-  try {
-    const { default: terminalImage } = await import("terminal-image");
-    const buffer   = readFileSync(BANNER_PATH);
-    const maxWidth = Math.min(cols - 4, 60);
-    const rendered = await terminalImage.buffer(buffer, {
-      width: maxWidth,
-      preserveAspectRatio: true,
-    });
-    cachedBannerLines = rendered.split("\n").filter(l => l.length > 0);
-  } catch {
-    cachedBannerLines = null;
-  }
+  await reloadBanner(cols);
 }
 
-// ── Types ──────────────────────────────────────────────────────────────────────
 export type LoadTask = {
   label: string;
-  run:   () => Promise<void>;
+  run: () => Promise<void>;
+  critical?: boolean;
 };
 
 type Props = {
-  tasks:   LoadTask[];
+  tasks: LoadTask[];
   onReady: () => void;
 };
 
-// ── Spinner frames ─────────────────────────────────────────────────────────────
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-// ── Component ──────────────────────────────────────────────────────────────────
 export function LoadingScreen({ tasks, onReady }: Props) {
-  const layout         = useLayout();
+  const layout = useLayout();
   const { cols, rows, refresh } = layout;
 
-  const [frame,   setFrame]   = React.useState(0);
+  const [frame, setFrame] = React.useState(0);
   const [current, setCurrent] = React.useState(0);
-  const [done,    setDone]    = React.useState(false);
-  const [error,   setError]   = React.useState<string | null>(null);
+  const [done, setDone] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
-  // Refresh layout dimensions after mount (quick, no delay needed since size was pre-captured)
-  React.useEffect(() => {
-    const t = setTimeout(refresh, 16);
-    return () => clearTimeout(t);
-  }, [refresh]);
-
-  // Spinner tick
   React.useEffect(() => {
     if (done || error) return;
     const t = setInterval(() => setFrame(f => (f + 1) % SPINNER.length), 80);
     return () => clearInterval(t);
   }, [done, error]);
 
-  // Run tasks sequentially
   React.useEffect(() => {
     let cancelled = false;
-
     async function run() {
       for (let i = 0; i < tasks.length; i++) {
         if (cancelled) return;
@@ -89,14 +69,21 @@ export function LoadingScreen({ tasks, onReady }: Props) {
         setTimeout(onReady, 300);
       }
     }
-
     run();
     return () => { cancelled = true; };
-  }, []);
+  }, [tasks, onReady]);
 
-  const panelW  = Math.min(cols - 4, layout.loadPanelW);
-  const innerW  = panelW - 8;
-  const spinner = SPINNER[frame]!;
+  const panelWidth = Math.min(cols - 4, 60);
+  const barWidth = Math.max(10, panelWidth - 6);
+  const progress = ((current + (done ? 1 : 0)) / tasks.length) * 100;
+  const filled = Math.floor((progress / 100) * barWidth);
+  const empty = barWidth - filled;
+
+  const bar = `${"█".repeat(filled)}${"░".repeat(empty)}`;
+
+  const borderColor = error ? theme.red : done ? theme.green : theme.blue;
+  const titleColor = error ? theme.red : done ? theme.green : theme.white;
+  const titleText = error ? "✗ ERROR AL INICIAR" : done ? "✓ SISTEMA LISTO" : "⟳ INICIANDO SISTEMA";
 
   return (
     <Box
@@ -109,79 +96,100 @@ export function LoadingScreen({ tasks, onReady }: Props) {
       <Box
         flexDirection="column"
         borderStyle="round"
-        borderColor={error ? theme.red : done ? theme.green : theme.textDim}
-        paddingX={3}
+        borderColor={borderColor}
+        paddingX={2}
         paddingY={1}
-        width={panelW}
+        width={panelWidth}
       >
-        {/* Title */}
         <Box justifyContent="center" marginBottom={1}>
-          <Text bold color={error ? theme.red : done ? theme.green : theme.white}>
-            {error ? "ERROR AL INICIAR" : done ? "LISTO" : "INICIANDO SISTEMA"}
+          <Text bold color={titleColor}>
+            {titleText}
           </Text>
         </Box>
 
-        <Text color={theme.textDim}>{"─".repeat(innerW)}</Text>
+        <Text color={theme.green}>{bar}</Text>
 
-        {/* Task list */}
-        <Box flexDirection="column" marginTop={1} gap={0}>
+        <Text color={theme.textDim}>{"─".repeat(panelWidth - 4)}</Text>
+
+        <Box flexDirection="column" marginY={0}>
           {tasks.map((task, i) => {
-            const isActive   = i === current && !done && !error;
+            const isActive = i === current && !done && !error;
             const isComplete = done ? true : i < current;
-            const isFailed   = error !== null && i === current;
+            const isFailed = error !== null && i === current;
 
-            const icon =
-              isFailed    ? <Text color={theme.red}>{"x"}</Text>
-              : isComplete ? <Text color={theme.green}>{"v"}</Text>
-              : isActive   ? <Text color={theme.amber}>{spinner}</Text>
-              :               <Text color={theme.textDim}>{"o"}</Text>;
+            let iconChar = "○";
+            let iconColor = theme.textDim;
 
-            const labelColor =
-              isFailed    ? theme.red
-              : isComplete ? theme.textSec
-              : isActive   ? theme.white
-              :               theme.textDim;
+            if (isFailed) {
+              iconChar = "✗";
+              iconColor = theme.red;
+            } else if (isComplete) {
+              iconChar = "✓";
+              iconColor = theme.green;
+            } else if (isActive) {
+              iconChar = SPINNER[frame]!;
+              iconColor = theme.amber;
+            }
+
+            const labelColor = isFailed
+              ? theme.red
+              : isComplete
+                ? theme.textSec
+                : isActive
+                  ? theme.white
+                  : theme.textDim;
 
             return (
-              <Box key={i} flexDirection="row" gap={2}>
-                {icon}
-                <Text color={labelColor}>{task.label}</Text>
+              <Box key={i} flexDirection="row" gap={1}>
+                <Text color={iconColor}>{iconChar}</Text>
+                <Text color={labelColor} bold={isActive}>
+                  {task.label}
+                </Text>
               </Box>
             );
           })}
         </Box>
 
-        {/* Error detail */}
-        {error && (
-          <Box marginTop={1}>
-            <Text color={theme.red} wrap="wrap">{error}</Text>
-          </Box>
-        )}
+        <Text color={theme.textDim}>{"─".repeat(panelWidth - 4)}</Text>
 
-        <Text color={theme.textDim}>{"─".repeat(innerW)}</Text>
-
-        {/* Status line */}
         <Box justifyContent="center" marginTop={0}>
           {done ? (
-            <Text color={theme.green} bold>Sistema listo</Text>
+            <Text color={theme.green} bold>
+              ✓ Sistema listo para usar
+            </Text>
           ) : error ? (
-            <Text color={theme.red}>Revisa la configuracion e intenta de nuevo</Text>
+            <Text color={theme.red}>{error}</Text>
           ) : (
-            <Text color={theme.textDim}>
-              {current + 1}/{tasks.length}{"  "}{tasks[current]?.label ?? ""}
+            <Text color={theme.textMuted}>
+              {tasks[current]?.label || "Inicializando..."}
             </Text>
           )}
         </Box>
       </Box>
 
-      {/* Footer */}
       <Box marginTop={1}>
         <Text color={theme.textDim}>
-          {"Developed by "}
-          <Text color={theme.textMuted}>AvalonTM</Text>
+          {"Developed with "}
+          <Text color={theme.red}>❤️</Text>
+          <Text color={theme.textDim}> by </Text>
+          <Text color={theme.green}>AvalonTM</Text>
+          <Text color={theme.textDim}>    </Text>
         </Text>
       </Box>
+    </Box>
+  );
+}
 
+export function LoadingSpinner({ label = "Cargando..." }: { label?: string }) {
+  const [frame, setFrame] = React.useState(0);
+  React.useEffect(() => {
+    const t = setInterval(() => setFrame(f => (f + 1) % SPINNER.length), 80);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <Box flexDirection="row" gap={1}>
+      <Text color={theme.amber}>{SPINNER[frame]}</Text>
+      <Text color={theme.textSec}>{label}</Text>
     </Box>
   );
 }

@@ -1,148 +1,46 @@
 import React from "react";
-import { Box, Text, useInput } from "ink";
-import { useAuth } from "../../store/auth.js";
-import { BgBox } from "../../shared/components/BgBox.js";
-import { theme } from "../../shared/theme.js";
-import { useLayout, TooSmallOverlay } from "../../shared/useLayout.js";
-import { cachedBannerLines } from "./LoadingScreen.js";
+import { Text, useInput } from "ink";
+import { Box, Row, Col, BgBox, theme, Text_, Input, Divider } from "@openpos/shared";
+import { useAuth } from "../../shared/useAuth";
+import { useLayout, TooSmallOverlay } from "../../shared/useLayout";
+import { cachedBannerLines, cachedBannerCols, reloadBanner } from "./LoadingScreen.js";
 
-// ── Fallback ASCII logo ────────────────────────────────────────────────────────
-// Used when banner.png is missing or terminal-image is not installed.
-// Two halves so we can dim the bottom rows to simulate depth.
-const LOGO_TOP = [
+const ASCII_LOGO_TOP = [
   " ██████╗ ██████╗ ███████╗███╗  ██╗    ██████╗  ██████╗ ███████╗",
   "██╔═══██╗██╔══██╗██╔════╝████╗ ██║    ██╔══██╗██╔═══██╗██╔════╝",
   "██║   ██║██████╔╝█████╗  ██╔██╗██║    ██████╔╝██║   ██║███████╗",
 ];
-const LOGO_BOTTOM = [
+const ASCII_LOGO_BOTTOM = [
   "██║   ██║██╔═══╝ ██╔══╝  ██║╚████║    ██╔═══╝ ██║   ██║╚════██║",
   " ██████╔╝██║     ███████╗██║ ╚███║    ██║      ██████╔╝███████║",
   " ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚══╝   ╚═╝      ╚═════╝ ╚══════╝",
 ];
-// Width of the ASCII art in characters
-const ASCII_LOGO_W = 65;
 
-// ── Logo sub-component ────────────────────────────────────────────────────────
-function Logo({ widthTier, heightTier, cols }: {
-  widthTier:  ReturnType<typeof useLayout>["widthTier"];
-  heightTier: ReturnType<typeof useLayout>["heightTier"];
-  cols:       number;
-}) {
-  // On short terminals skip the logo entirely to save vertical space
-  if (heightTier === "short") return null;
-
-  // Image cached from the loading phase — render it directly
-  if (cachedBannerLines !== null) {
-    return (
-      <Box flexDirection="column" alignItems="center">
-        {cachedBannerLines.map((line, i) => (
-          <Text key={i}>{line}</Text>
-        ))}
-        <Box justifyContent="center">
-          <Text color={theme.textDim}>v1.0.0</Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  // Compact terminal: ASCII logo is wider than the terminal — show text fallback
-  if (widthTier === "compact" || cols < ASCII_LOGO_W + 4) {
-    return (
-      <Box flexDirection="column" alignItems="center" marginBottom={1}>
-        <Text color={theme.green} bold>▸ OpenPos</Text>
-        <Text color={theme.textDim}>v1.0.0</Text>
-      </Box>
-    );
-  }
-
-  // Full ASCII logo
-  return (
-    <Box flexDirection="column" alignItems="center">
-      {LOGO_TOP.map((line, i) => (
-        <Text key={`t${i}`} color={theme.white}>{line}</Text>
-      ))}
-      {LOGO_BOTTOM.map((line, i) => (
-        <Text key={`b${i}`} color={theme.textMuted}>{line}</Text>
-      ))}
-      <Box width={ASCII_LOGO_W} justifyContent="flex-end">
-        <Text color={theme.textDim}>v1.0.0</Text>
-      </Box>
-    </Box>
-  );
-}
-
-// ── Field sub-component ───────────────────────────────────────────────────────
-function Field({
-  label,
-  value,
-  focused,
-  focusColor,
-  placeholder,
-  masked = false,
-  fieldW,
-}: {
-  label:       string;
-  value:       string;
-  focused:     boolean;
-  focusColor:  string;
-  placeholder: string;
-  masked?:     boolean;
-  fieldW:      number;
-}) {
-  const displayValue = masked ? "●".repeat(value.length) : value;
-
-  return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Box gap={1}>
-        <Text color={focused ? focusColor : theme.textMuted}>
-          {focused ? "◉" : "○"}
-        </Text>
-        <Text color={focused ? theme.white : theme.textMuted} bold>
-          {label}
-        </Text>
-      </Box>
-      <Box
-        borderStyle={focused ? "single" : undefined}
-        borderColor={focusColor}
-        paddingX={focused ? 1 : 0}
-        marginLeft={focused ? 0 : 2}
-        width={fieldW}
-      >
-        <Text color={focused ? focusColor : theme.textSec}>
-          {value
-            ? displayValue + (focused ? "▌" : "")
-            : focused
-              ? "▌"
-              : <Text color={theme.textDim}>{placeholder}</Text>
-          }
-        </Text>
-      </Box>
-    </Box>
-  );
-}
-
-// ── Props ─────────────────────────────────────────────────────────────────────
 type Props = {
   onLogin: () => void;
 };
 
-// ── Main component ────────────────────────────────────────────────────────────
 export function LoginScreen({ onLogin }: Props) {
-  const { login }  = useAuth();
-  const layout     = useLayout();
+  const { login } = useAuth();
+  const layout = useLayout();
   const { cols, rows, widthTier, heightTier, loginPanelW, refresh } = layout;
 
   const [username, setUsername] = React.useState("");
-  const [pin,      setPin]      = React.useState("");
-  const [focus,    setFocus]    = React.useState<"username" | "pin">("username");
-  const [error,    setError]    = React.useState("");
+  const [pin, setPin] = React.useState("");
+  const [error, setError] = React.useState("");
   const [attempts, setAttempts] = React.useState(0);
+  const [focus, setFocus] = React.useState<"username" | "pin">("username");
 
-  // Refresh layout dimensions after mount (quick)
+  // Local banner state: initialize from cache, re-generate if cols mismatch
+  const [bannerLines, setBannerLines] = React.useState<string[] | null>(cachedBannerLines);
+
   React.useEffect(() => {
-    const t = setTimeout(refresh, 16);
-    return () => clearTimeout(t);
-  }, [refresh]);
+    if (cols > 0 && cols !== cachedBannerCols) {
+      reloadBanner(cols).then(lines => {
+        setBannerLines(lines);
+      });
+    }
+  }, [cols]);
 
   useInput((input, key) => {
     if (error) setError("");
@@ -152,19 +50,11 @@ export function LoginScreen({ onLogin }: Props) {
       return;
     }
 
-    if (key.backspace) {
-      if (focus === "username") setUsername(s => s.slice(0, -1));
-      if (focus === "pin")      setPin(s => s.slice(0, -1));
-      return;
-    }
-
-    if (focus === "username" && /^[a-zA-Z0-9]$/.test(input)) {
-      if (username.length < 20) setUsername(s => s + input);
-      return;
-    }
-
-    if (focus === "pin" && /^[0-9]$/.test(input)) {
-      if (pin.length < 6) setPin(s => s + input);
+    if (key.escape) {
+      setUsername("");
+      setPin("");
+      setError("");
+      setAttempts(0);
       return;
     }
 
@@ -183,138 +73,128 @@ export function LoginScreen({ onLogin }: Props) {
             setAttempts(0);
             setError("Demasiados intentos. Limpiando...");
           } else {
-            setError(`Credenciales incorrectas (${next}/3)`);
+            setError(`Incorrectas (${next}/3)`);
           }
         }
       }
       return;
     }
-
-    if (key.escape) {
-      if (focus === "username") setUsername("");
-      if (focus === "pin")      setPin("");
-      return;
-    }
   });
 
-  // ── Too small guard ────────────────────────────────────────────────────────
   if (layout.tooSmall) return <TooSmallOverlay layout={layout} />;
 
-  // ── Derived sizing ─────────────────────────────────────────────────────────
-  // Field width = panel inner width minus padding and border
-  const fieldW    = loginPanelW - 10;
-  // Divider inside the panel
-  const dividerW  = loginPanelW - 8;
-  // Header/footer label visibility
-  const showSubtitle = widthTier !== "compact";
+  const isCompact = widthTier === "compact";
+  const isShort = heightTier === "short";
+  const canSubmit = Boolean(username && pin);
+
+  const fieldW = loginPanelW - 8;
 
   return (
-    <Box flexDirection="column" width={cols} height={rows}>
-
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <BgBox variant="section" width={cols} paddingX={2}>
-        <Box width={cols - 4} justifyContent="space-between">
-          <Text color={theme.textMuted}>
+    <Col width={cols} height={rows}>
+      <BgBox variant="section">
+        <Row justifyContent="space-between" alignItems="center">
+          <Row gap={1} alignItems="center">
             <Text color={theme.green} bold>▸</Text>
-            {"  TIENDA POS"}
-          </Text>
-          {showSubtitle && (
+            <Text color={theme.textMuted}>TIENDA POS</Text>
+          </Row>
+          {!isCompact && (
             <Text color={theme.textMuted}>Sistema de Punto de Venta</Text>
           )}
-        </Box>
+        </Row>
       </BgBox>
 
-      {/* ── Body ────────────────────────────────────────────────────────── */}
-      <Box
-        flexDirection="column"
-        justifyContent="center"
-        alignItems="center"
-        flexGrow={1}
-        gap={heightTier === "short" ? 0 : 1}
-      >
-        {/* Logo — hidden on short terminals */}
-        <Logo widthTier={widthTier} heightTier={heightTier} cols={cols} />
+      <Col justifyContent="center" alignItems="center" flexGrow={1} gap={isShort ? 0 : 1}>
+        {!isShort && bannerLines !== null && (
+          <Col alignItems="center" gap={0}>
+            {bannerLines.map((line, i) => (
+              <Text key={i} color={theme.green}>{line}</Text>
+            ))}
+          </Col>
+        )}
 
-        {/* ── Login panel ─────────────────────────────────────────────── */}
+        {!isShort && (widthTier !== "compact" && cols >= 70) && (
+          <Col alignItems="center" gap={0}>
+            {ASCII_LOGO_TOP.map((line, i) => (
+              <Text key={`t${i}`} color={theme.white}>{line}</Text>
+            ))}
+            {ASCII_LOGO_BOTTOM.map((line, i) => (
+              <Text key={`b${i}`} color={theme.textMuted}>{line}</Text>
+            ))}
+          </Col>
+        )}
+
+        {isShort || (widthTier === "compact" || cols < 70) ? (
+          <Col alignItems="center" gap={1}>
+            <Text color={theme.green} bold>▸ OpenPOS</Text>
+          </Col>
+        ) : null}
+
         <BgBox variant="panel" width={loginPanelW} paddingX={3} paddingY={1}>
-
-          {/* Panel title */}
-          <Box justifyContent="center" marginBottom={1}>
+          <Row justifyContent="center" paddingY={1}>
             <Text color={theme.green} bold>
-              {widthTier === "compact"
-                ? "─  ACCESO  ─"
-                : "━━  ACCESO AL SISTEMA  ━━"
-              }
+              {isCompact ? "─  ACCESO  ─" : "━━  ACCESO AL SISTEMA  ━━"}
             </Text>
-          </Box>
+          </Row>
 
-          {/* Username */}
-          <Field
-            label="USUARIO"
-            value={username}
-            focused={focus === "username"}
-            focusColor={theme.amber}
-            placeholder="sin usuario"
-            fieldW={fieldW}
-          />
+          <Col gap={isShort ? 0 : 0}>
+            <Input
+              value={username}
+              onChange={setUsername}
+              type="text"
+              width={fieldW}
+              variant="default"
+              isFocused={focus === "username"}
+              label="USUARIO"
+            />
 
-          {/* Password */}
-          <Field
-            label="CONTRASENA"
-            value={pin}
-            focused={focus === "pin"}
-            focusColor={theme.green}
-            placeholder="sin contrasena"
-            masked
-            fieldW={fieldW}
-          />
+            <Input
+              value={pin}
+              onChange={setPin}
+              type="password"
+              width={fieldW}
+              variant={error ? "error" : "default"}
+              isFocused={focus === "pin"}
+              label="PIN"
+            />
+          </Col>
 
-          <Text color={theme.textDim}>{"─".repeat(dividerW)}</Text>
+          <Divider width={fieldW} />
 
-          {/* Error or submit prompt */}
-          {error ? (
-            <Box justifyContent="center" marginTop={1}>
-              <Text color={theme.red} bold>{"!  "}{error}</Text>
-            </Box>
-          ) : (
-            <Box justifyContent="center" marginTop={1}>
-              {username && pin ? (
-                <Text color={theme.green} bold>{"[ ENTER ]  ACCEDER  ->"}</Text>
-              ) : (
-                <Text color={theme.textMuted}>{"[ ENTER ]  ACCEDER"}</Text>
-              )}
-            </Box>
-          )}
+          <Row justifyContent="center" marginTop={1}>
+            {error ? (
+              <Text color={theme.red} bold>{"✗  "}{error}</Text>
+            ) : canSubmit ? (
+              <Text color={theme.green} bold>{"[ ENTER ]  ACCEDER  →"}</Text>
+            ) : (
+              <Text color={theme.textMuted}>{"[ ENTER ]  ACCEDER"}</Text>
+            )}
+          </Row>
 
-          {/* Keyboard hints — hidden on very short terminals */}
-          {heightTier !== "short" && (
-            <Box justifyContent="center" marginTop={1} gap={2}>
-              <Text color={theme.textDim}>
+          {!isShort && (
+            <Row justifyContent="center" gap={2}>
+              <Row gap={1}>
                 <Text color={theme.textMuted} bold>Tab</Text>
-                {" cambiar"}
-              </Text>
-              <Text color={theme.textDim}>{"·"}</Text>
-              <Text color={theme.textDim}>
+                <Text color={theme.textDim}>cambiar</Text>
+              </Row>
+              <Text color={theme.textDim}>·</Text>
+              <Row gap={1}>
                 <Text color={theme.textMuted} bold>Esc</Text>
-                {" limpiar"}
-              </Text>
-            </Box>
+                <Text color={theme.textDim}>limpiar</Text>
+              </Row>
+            </Row>
           )}
-
         </BgBox>
-      </Box>
+      </Col>
 
-      {/* ── Footer ──────────────────────────────────────────────────────── */}
-      <BgBox variant="section" width={cols} paddingX={2}>
-        <Box width={cols - 4} justifyContent="space-between">
+      <BgBox variant="section">
+        <Row justifyContent="space-between" alignItems="center">
           <Text color={theme.textDim}>v1.0.0</Text>
-          <Text color={theme.textDim}>
-            {"Developed by "}
+          <Row gap={1}>
+            <Text color={theme.textDim}>Developed by</Text>
             <Text color={theme.textMuted}>AvalonTM</Text>
-          </Text>
-        </Box>
+          </Row>
+        </Row>
       </BgBox>
-
-    </Box>
+    </Col>
   );
 }

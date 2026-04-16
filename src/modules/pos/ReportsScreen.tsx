@@ -1,10 +1,8 @@
 import React from "react";
 import { Box, Text, useInput } from "ink";
-import { db } from "../../db/client.js";
-import { sales } from "../../db/schema.js";
-import { BgBox } from "../../shared/components/BgBox.js";
-import { theme, fmt } from "../../shared/theme.js";
-import { printTicket, type TicketData } from "../../utils/printer/index.js";
+import { db, sales, BgBox, theme, fmt, printTicket, type TicketData, type Sale, useWindowManager } from "@openpos/shared";
+
+const WINDOW_ID = "reports-screen";
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 type ReportType = "day" | "method" | "products" | "hour";
@@ -67,6 +65,7 @@ function StatRow(props: { label: string; value: string; labelColor?: string; val
 
 // ── Componente principal ─────────────────────────────────────────────────────
 export function ReportsScreen({ rows, cols, active, onClose }: Props) {
+  const isWindowActive = useWindowManager(state => state.isWindowActive);
   const [reportType,  setReportType]  = React.useState<ReportType>("day");
   const [reportData,  setReportData]  = React.useState<any>(null);
   const [printStatus, setPrintStatus] = React.useState<"idle" | "printing" | "done" | "error">("idle");
@@ -77,10 +76,10 @@ export function ReportsScreen({ rows, cols, active, onClose }: Props) {
     const allSales = db.select().from(sales).all();
 
     if (reportType === "day") {
-      const daySales   = allSales.filter(s => s.createdAt.startsWith(today) && s.status === "completed");
-      const totalSales = daySales.reduce((sum, s) => sum + s.total,     0);
-      const totalItems = daySales.reduce((sum, s) => sum + s.itemCount, 0);
-      const totalTax   = daySales.reduce((sum, s) => sum + s.tax,       0);
+      const daySales   = allSales.filter((s: Sale) => s.createdAt.startsWith(today) && s.status === "completed");
+      const totalSales = daySales.reduce((sum: number, s: Sale) => sum + s.total,     0);
+      const totalItems = daySales.reduce((sum: number, s: Sale) => sum + s.itemCount, 0);
+      const totalTax   = daySales.reduce((sum: number, s: Sale) => sum + s.tax,       0);
       const byMethod: Record<string, { count: number; total: number }> = {};
       for (const s of daySales) {
         if (!byMethod[s.method]) byMethod[s.method] = { count: 0, total: 0 };
@@ -92,7 +91,7 @@ export function ReportsScreen({ rows, cols, active, onClose }: Props) {
 
     if (reportType === "method") {
       const byMethod: Record<string, { count: number; total: number }> = {};
-      for (const s of allSales.filter(s => s.status === "completed")) {
+      for (const s of allSales.filter((s: Sale) => s.status === "completed")) {
         if (!byMethod[s.method]) byMethod[s.method] = { count: 0, total: 0 };
         byMethod[s.method]!.count++;
         byMethod[s.method]!.total += s.total;
@@ -103,7 +102,7 @@ export function ReportsScreen({ rows, cols, active, onClose }: Props) {
 
     if (reportType === "products") {
       const productMap: Record<string, { name: string; category: string; qty: number; total: number }> = {};
-      for (const s of allSales.filter(s => s.status === "completed")) {
+      for (const s of allSales.filter((s: Sale) => s.status === "completed")) {
         const items = JSON.parse(s.items);
         for (const item of items) {
           if (!productMap[item.sku])
@@ -123,7 +122,7 @@ export function ReportsScreen({ rows, cols, active, onClose }: Props) {
       const today    = new Date().toISOString().split("T")[0]!;
       const hourMap: Record<number, number> = {};
       for (let i = 0; i < 24; i++) hourMap[i] = 0;
-      for (const s of allSales.filter(s => s.status === "completed" && s.createdAt.startsWith(today))) {
+      for (const s of allSales.filter((s: Sale) => s.status === "completed" && s.createdAt.startsWith(today))) {
         const hour = new Date(s.createdAt).getHours();
         hourMap[hour] = (hourMap[hour] ?? 0) + s.total;
       }
@@ -133,8 +132,16 @@ export function ReportsScreen({ rows, cols, active, onClose }: Props) {
     }
   }, [reportType]);
 
+  // Window registration and data loading
   React.useEffect(() => {
-    if (active) { loadReport(); setPrintStatus("idle"); }
+    if (active) {
+      useWindowManager.getState().registerWindow(WINDOW_ID);
+      loadReport();
+      setPrintStatus("idle");
+    }
+    return () => {
+      useWindowManager.getState().unregisterWindow(WINDOW_ID);
+    };
   }, [active, reportType, loadReport]);
 
   // ── Imprimir reporte ───────────────────────────────────────────────────────
@@ -228,7 +235,7 @@ export function ReportsScreen({ rows, cols, active, onClose }: Props) {
 
   // ── Input ─────────────────────────────────────────────────────────────────
   useInput((input, key) => {
-    if (!active) return;
+    if (!isWindowActive(WINDOW_ID)) return;
     if (key.escape || (input === "q" && key.ctrl)) { onClose(); return; }
     if (input === "1") setReportType("day");
     if (input === "2") setReportType("method");
@@ -238,7 +245,7 @@ export function ReportsScreen({ rows, cols, active, onClose }: Props) {
     if (input === "r") loadReport();
   });
 
-  if (!active || !reportData) return null;
+  if (!isWindowActive(WINDOW_ID) || !reportData) return null;
 
   // ── Dimensiones del modal ──────────────────────────────────────────────────
   const W = Math.floor(cols * 0.65);        // 65% del ancho

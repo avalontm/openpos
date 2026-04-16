@@ -1,8 +1,45 @@
 import { resolve } from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { db, initDb, getConfig, setConfig, CONFIG_KEYS } from "./db/client.js";
-import { products, users } from "./db/schema.js";
+import { db, initDb, getConfig, setConfig, CONFIG_KEYS, products, users, logger } from "@openpos/shared";
 import { sql } from "drizzle-orm";
+
+logger.info("CLI module loaded");
+
+function setupGlobalErrorHandlers() {
+  process.on("uncaughtException", (err) => {
+    logger.error("uncaughtException", { error: String(err), stack: err.stack });
+    console.error("\n❌ Error crítico. Revisa openpos.log para detalles.");
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    logger.error("unhandledRejection", { reason: String(reason), stack: reason instanceof Error ? reason.stack : undefined });
+    console.error("\n❌ Error crítico. Revisa openpos.log para detalles.");
+    process.exit(1);
+  });
+}
+
+function isInteractiveTerminal(): boolean {
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
+function checkTerminalSupport(): boolean {
+  const stdinTTY = process.stdin.isTTY === true;
+  const stdoutTTY = process.stdout.isTTY === true;
+  
+  logger.info("Terminal check", { stdin: stdinTTY, stdout: stdoutTTY });
+  
+  if (!stdinTTY || !stdoutTTY) {
+    logger.warn("Non-interactive terminal detected", {
+      stdin: process.stdin.isTTY,
+      stdout: process.stdout.isTTY
+    });
+    console.error("\n⚠️  Error: Se requiere un terminal interactivo para ejecutar el modo TUI.");
+    console.error("   Usa --help para ver comandos disponibles.");
+    console.error("   Para modo gráfico, usa: npm run dev:gui");
+    return false;
+  }
+  return true;
+}
 
 const VERSION = "1.0.0";
 
@@ -17,6 +54,7 @@ USO:
 
 COMANDOS:
   (sin comando)    Iniciar modo interactivo
+  --settings       Abrir configuración (TUI)
   import products  Importar productos desde archivo CSV
   export products Exportar productos a archivo CSV
   seed            Insertar productos de ejemplo
@@ -24,14 +62,17 @@ COMANDOS:
   config get      Ver configuracion actual
   config set      Actualizar configuracion
 
-OPCIONES:
+  OPCIONES:
   -h, --help      Mostrar esta ayuda
   -v, --version   Mostrar version
   --dry-run       Simular sin guardar cambios
+  --replace       Vaciar productos antes de importar
 
 EJEMPLOS:
   pos.exe           Modo interactivo
+  pos.exe --settings Configuración TUI
   import products   Importar productos
+  import products --replace  Importar reemplazando todo
   export products   Exportar productos
   seed              Productos de ejemplo
   add user juan 1234                    Agregar usuario (role: cashier)
@@ -94,7 +135,7 @@ function normalizeProduct(row: Record<string, string>) {
   };
 }
 
-async function importProducts(filePath: string, dryRun: boolean): Promise<void> {
+async function importProducts(filePath: string, dryRun: boolean, replace: boolean = false): Promise<void> {
   if (!filePath) {
     showError("Falta archivo. Uso: pos.exe import products <archivo.csv>");
   }
@@ -104,9 +145,15 @@ async function importProducts(filePath: string, dryRun: boolean): Promise<void> 
     showError(`Archivo no encontrado: ${filePath}`);
   }
 
-  console.log(`📂 Importando: ${filePath}`);
+  console.log(`📂 Importando: ${filePath}${replace ? " (REPLACE)" : ""}`);
 
   initDb();
+
+  if (replace) {
+    console.log("🗑️  Limpiando productos existentes...");
+    db.delete(products).run();
+    console.log("✅ Productos eliminados");
+  }
 
   const content = readFileSync(fullPath, "utf-8");
   const rows = parseCSV(content);
@@ -290,8 +337,12 @@ async function configSet(key: string, value: string): Promise<void> {
     showError(`Invalid key. Use: ${VALID_CONFIG_KEYS.join(", ")}`);
   }
 
-  setConfig(key, value);
-  console.log(`✅ ${key} = ${value}`);
+  const ok = setConfig(key, value);
+  if (ok) {
+    console.log(`✅ ${key} = ${value}`);
+  } else {
+    showError(`Failed to save ${key}`);
+  }
 }
 
 async function addUser(username: string, pin: string, role: string): Promise<void> {
@@ -345,11 +396,63 @@ async function addUser(username: string, pin: string, role: string): Promise<voi
 }
 
 export async function runCLI(): Promise<boolean> {
+  setupGlobalErrorHandlers();
+  
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
-    return false;
+    if (!checkTerminalSupport()) {
+      return false;
+    }
+
+    process.stdout.write("\x1b[?1049h");
+    process.stdout.write("\x1b[3J");
+    process.stdout.write("\x1b[H");
+    process.stdout.write(" \r");
+    
+    initDb();
+    
+    try {
+      const { render } = await import("ink");
+      const React = await import("react");
+      const { App } = await import("./app.js");
+      
+      function cleanup() {
+        process.stdout.write("\x1b[?1049l");
+      }
+      process.on("exit", cleanup);
+      process.on("SIGINT", cleanup);
+      process.on("SIGTERM", cleanup);
+      
+      render(React.default.createElement(App));
+      return true;
+    } catch (err) {
+      const errMsg = String(err);
+      const isRawModeError = errMsg.includes("Raw mode") || errMsg.includes("is not supported");
+      
+      if (isRawModeError) {
+        logger.error("TUI render failed: Raw mode not supported", { 
+          error: errMsg,
+          stdin: process.stdin.isTTY,
+          stdout: process.stdout.isTTY
+        });
+      } else {
+        logger.error("TUI render failed", { error: errMsg, stack: err instanceof Error ? err.stack : undefined });
+      }
+      
+      console.error("\n❌ Error al iniciar la interfaz TUI.");
+      if (isRawModeError) {
+        console.error("   El terminal no soporta modo raw.");
+      }
+      console.error("   Revisa openpos.log para detalles.");
+      console.error("   Prueba: npm run dev:gui (modo gráfico)");
+      
+      process.stdout.write("\x1b[?1049l");
+      process.exit(1);
+    }
   }
+
+  initDb();
 
   if (args.includes("--help") || args.includes("-h")) {
     showHelp();
@@ -362,18 +465,61 @@ export async function runCLI(): Promise<boolean> {
   }
 
   const dryRun = args.includes("--dry-run");
+  const replace = args.includes("--replace");
 
   const cmd = args[0];
   const subcmd = args[1];
   const param = args[2];
 
   switch (cmd) {
+    case "--settings":
+      if (!checkTerminalSupport()) {
+        return false;
+      }
+
+      process.stdout.write("\x1b[?1049h");
+      process.stdout.write("\x1b[3J");
+      process.stdout.write("\x1b[H");
+      process.stdout.write(" \r");
+      
+      const initialCols = process.stdout.columns || 80;
+      const initialRows = process.stdout.rows || 24;
+      (globalThis as unknown as { __TERM_COLS__: number; __TERM_ROWS__: number }).__TERM_COLS__ = initialCols;
+      (globalThis as unknown as { __TERM_COLS__: number; __TERM_ROWS__: number }).__TERM_ROWS__ = initialRows;
+      logger.info(`Settings: starting — terminal ${initialCols}x${initialRows}`);
+      
+      (async () => {
+        try {
+          const { render } = await import("ink");
+          const React = await import("react");
+          const { SettingsApp } = await import("./modules/settings/SettingsApp.js");
+          const { initDb } = await import("@openpos/shared");
+          initDb();
+          
+          function cleanup() {
+            process.stdout.write("\x1b[?1049l");
+          }
+          process.on("exit", cleanup);
+          process.on("SIGINT", cleanup);
+          process.on("SIGTERM", cleanup);
+          
+          render(React.default.createElement(SettingsApp));
+          logger.info("Settings: rendered");
+        } catch (err) {
+          logger.error("Settings render failed", { error: String(err), stack: err instanceof Error ? err.stack : undefined });
+          console.error("\n❌ Error al iniciar configuración.");
+          console.error("   Revisa openpos.log para detalles.");
+          process.exit(1);
+        }
+      })();
+      return true;
+
     case "import":
       if (subcmd === "products") {
-        await importProducts(param, dryRun);
+        await importProducts(param, dryRun, replace);
         process.exit(0);
       }
-      showError("Uso: pos.exe import products <archivo.csv>");
+      showError("Uso: pos.exe import products <archivo.csv> [--replace]");
       break;
 
     case "export":
@@ -424,3 +570,5 @@ export async function runCLI(): Promise<boolean> {
 
   return false;
 }
+
+runCLI();

@@ -1,13 +1,16 @@
 import React from "react";
 import { Box, Text, useInput } from "ink";
-import { useCart, UNIT_LABELS } from "../../../store/cart.js";
-import { BgBox } from "../../../shared/components/BgBox.js";
-import { theme, fmt } from "../../../shared/theme.js";
+import { useCart, UNIT_LABELS, BgBox, theme, fmt } from "@openpos/shared";
+
+type BillingStatus = "idle" | "processing" | "success" | "error";
 
 type Props = {
   active: boolean;
   onPay:  () => void;
   height: number;
+  width: number;
+  billingStatus?: BillingStatus;
+  billingMsg?: string;
 };
 
 function formatQty(qty: number, unitType: string | undefined): string {
@@ -60,7 +63,7 @@ function Scrollbar(props: {
 }
 
 // ── Componente principal ───────────────────────────────────────────────────────
-export function Ticket({ active, onPay, height }: Props) {
+export function Ticket({ active, onPay, height, width, billingStatus, billingMsg }: Props) {
   const { items, inc, dec, remove, subtotal, tax, total, ticketNum } = useCart();
   const [cursor, setCursor] = React.useState(0);
 
@@ -96,11 +99,11 @@ export function Ticket({ active, onPay, height }: Props) {
   const emptyRows    = Math.max(0, maxVisible - visibleItems.length);
 
   return (
-    <Box flexDirection="column" width={26} height={height}>
+    <Box flexDirection="column" width={width} height={height}>
 
       {/* ── Header — 1 línea ─────────────────────────────────────────────── */}
-      <BgBox variant="section" width={26} paddingX={1}>
-        <Box width={24} justifyContent="space-between">
+      <BgBox variant="section" width={width} paddingX={1}>
+        <Box width={width - 2} justifyContent="space-between">
           <Box flexDirection="row" gap={1}>
             <Text color={active ? theme.green : theme.textDim} bold>
               {active ? "▸" : " "}
@@ -117,7 +120,7 @@ export function Ticket({ active, onPay, height }: Props) {
       <Box flexDirection="row" height={trackH}>
 
         {/* Ítems */}
-        <Box flexDirection="column" width={25} height={trackH} paddingX={1}>
+        <Box flexDirection="column" width={width - 1} height={trackH} paddingX={1}>
           {items.length === 0 ? (
             <Box flexDirection="column" height={trackH} justifyContent="center">
               <Text color={theme.textMuted}>○  Carrito vacío</Text>
@@ -176,7 +179,7 @@ export function Ticket({ active, onPay, height }: Props) {
 
       {/* ── Divider — 1 línea ────────────────────────────────────────────── */}
       <Box paddingX={1}>
-        <Text color={theme.textDim}>{"─".repeat(24)}</Text>
+        <Text color={theme.textDim}>{"─".repeat(width - 2)}</Text>
       </Box>
 
       {/* ── Subtotal — 1 línea ───────────────────────────────────────────── */}
@@ -196,6 +199,21 @@ export function Ticket({ active, onPay, height }: Props) {
         <Text color={theme.green} bold>TOTAL</Text>
         <Text color={theme.green} bold>{fmt.money(total())}</Text>
       </Box>
+
+      {/* ── Billing status — 1 línea ──────────────────────────────────────── */}
+      {billingStatus && billingStatus !== "idle" && (
+        <Box justifyContent="center" paddingX={1}>
+          {billingStatus === "processing" && (
+            <Text color={theme.amber}>⏳ FACTURANDO...</Text>
+          )}
+          {billingStatus === "success" && (
+            <Text color={theme.green}>✓ FACTURADO</Text>
+          )}
+          {billingStatus === "error" && (
+            <Text color={theme.red}>{billingMsg || "✗ ERROR FACTURA"}</Text>
+          )}
+        </Box>
+      )}
 
       {/* ── Hints — 1 línea ──────────────────────────────────────────────── */}
       <Box paddingX={1} gap={1}>

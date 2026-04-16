@@ -1,0 +1,76 @@
+{
+  "width": 48,
+  "billing": {
+    "printOnTicket": true,
+    "showUuid": true,
+    "showVerificationUrl": true
+  },
+  "header": {
+    "enabled": true,
+    "items": [
+      { "type": "text", "value": "================================", "align": "center" },
+      { "type": "text", "value": "           ▸ TIENDA POS", "align": "center", "bold": true },
+      { "type": "text", "value": "        RFC: XXXX-XXXXXX", "align": "center", "if": "width>=48" },
+      { "type": "text", "value": "        Calle Falsa 123", "align": "center", "if": "width>=48" },
+      { "type": "text", "value": "================================", "align": "center" }
+    ]
+  },
+  "body": {
+    "fields": {
+      "enabled": true,
+      "items": [
+        { "label": "Fecha:", "value": "date", "format": "datetime" },
+        { "label": "Cajero:", "value": "employee" },
+        { "label": "Ticket:", "value": "ticket" }
+      ]
+    },
+    "divider": { "enabled": true, "char": "-" },
+    "items": {
+      "enabled": true,
+      "showUnit": true,
+      "showUnitType": true,
+      "format": "table"
+    }
+  },
+  "footer": {
+    "totals": {
+      "enabled": true,
+      "items": [
+        { "label": "Subtotal:", "value": "subtotal", "align": "right" },
+        { "label": "IVA:", "value": "tax", "format": "tax", "align": "right" },
+        { "label": "TOTAL:", "value": "total", "bold": true, "align": "right", "size": "double" }
+      ]
+    },
+    "payment": {
+      "enabled": true,
+      "items": [
+        { "label": "Efectivo:", "value": "received", "align": "right", "if": "method=efectivo" },
+        { "label": "Cambio:", "value": "change", "align": "right", "if": "method=efectivo" },
+        { "label": "Método:", "value": "method", "align": "right" }
+      ]
+    },
+    "divider": { "enabled": true, "char": "=" },
+    "qrcode": {
+      "enabled": true,
+      "data": "https://mitienda.com/ticket/{ticket}",
+      "size": 6
+    },
+    "barcode": {
+      "enabled": false,
+      "type": "code128",
+      "value": "ticket"
+    },
+    "message": {
+      "enabled": true,
+      "lines": [
+        "      Gracias por su compra!",
+        "         Vuelva pronto"
+      ]
+    }
+  },
+  "actions": {
+    "cut": true,
+    "cashDrawer": false,
+    "beep": false
+  }
+}

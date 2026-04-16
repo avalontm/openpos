@@ -1,33 +1,21 @@
 import React from "react";
 import { Box, Text, useInput } from "ink";
-import type { Product } from "../../../db/schema.js";
-import { theme, fmt } from "../../../shared/theme.js";
+import { type Product, theme, fmt } from "@openpos/shared";
 
 type Props = {
-  products: Product[];
-  query:    string;
-  onSelect: (p: Product) => void;
-  active:   boolean;
-  width:    number;
-  height:   number;
-  cols:     number;   // grid columns — injected from useLayout
-  itemH:    number;   // rows per card — injected from useLayout
+  products:   Product[];
+  query:      string;
+  total:      number;
+  onSelect:   (p: Product) => void;
+  onLoadMore: () => void;
+  active:     boolean;
+  width:      number;
+  height:     number;
+  cols:       number;   // grid columns — injected from useLayout
+  itemH:      number;   // rows per card — injected from useLayout
 };
 
 const SCROLLBAR = 2;
-
-const CAT_COLOR: Record<string, string> = {
-  BEB: theme.blue,   ALI: theme.amber,  BOT: theme.cyan,   LAC: theme.purple,
-  GEN: theme.textSec, FRU: theme.green,  CAR: theme.red,    LIM: theme.orange,
-};
-const CAT_ICON: Record<string, string> = {
-  BEB: "◆", ALI: "◈", BOT: "◇", LAC: "◉",
-  GEN: "○", FRU: "◍", CAR: "◼", LIM: "◌",
-};
-const CAT_LABEL: Record<string, string> = {
-  BEB: "Bebidas",  ALI: "Alimentos", BOT: "Botanas",  LAC: "Lacteos",
-  GEN: "General",  FRU: "Frutas",    CAR: "Carnes",   LIM: "Limpieza",
-};
 
 // ── Scrollbar ─────────────────────────────────────────────────────────────────
 function Scrollbar(props: {
@@ -88,19 +76,16 @@ function StockBar(props: { stock: number; max: number; width: number; low: boole
 // ── CatBadge ──────────────────────────────────────────────────────────────────
 function CatBadge(props: { category: string; selected: boolean }) {
   const { category, selected } = props;
-  const color = CAT_COLOR[category] ?? theme.textSec;
-  const icon  = CAT_ICON[category]  ?? "○";
-  const label = CAT_LABEL[category] ?? category;
   return (
-    <Text color={selected ? color : theme.textDim}>
-      {icon}{" "}{label}
+    <Text color={selected ? theme.textSec : theme.textMuted}>
+      {category}
     </Text>
   );
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 export function ProductGrid({
-  products, query, onSelect, active, width, height, cols: COLS, itemH: ITEM_H,
+  products, query, total, onSelect, onLoadMore, active, width, height, cols: COLS, itemH: ITEM_H,
 }: Props) {
   const [cursor,    setCursor]    = React.useState(0);
   const [scrollRow, setScrollRow] = React.useState(0);
@@ -117,12 +102,20 @@ export function ProductGrid({
 
   React.useEffect(() => { setCursor(0); setScrollRow(0); }, [query]);
 
+  const visibleRows = Math.max(1, Math.floor((height - 1) / ITEM_H));
+
+  // Load more when scrolling near the end
+  const hasMore = products.length < total;
+  React.useEffect(() => {
+    if (hasMore && scrollRow >= filtered.length - visibleRows * 2) {
+      onLoadMore();
+    }
+  }, [scrollRow, hasMore, filtered.length, visibleRows]);
+
   // Clamp cursor when cols changes (e.g. terminal resize changes grid columns)
   React.useEffect(() => {
     setCursor(c => Math.min(c, Math.max(0, filtered.length - 1)));
   }, [COLS, filtered.length]);
-
-  const visibleRows = Math.max(1, Math.floor((height - 1) / ITEM_H));
 
   const maxStock = React.useMemo(() =>
     filtered.reduce((mx, p) => Math.max(mx, p.stock ?? 0), 1),
@@ -265,7 +258,7 @@ export function ProductGrid({
                 {row.map((p, ci) => {
                   const idx      = absRi * COLS + ci;
                   const sel      = idx === cursor && active;
-                  const catColor = CAT_COLOR[p.category] ?? theme.textSec;
+                  const catColor = theme.textSec;
                   const stock    = p.stock ?? 0;
                   const isLow    = stock > 0 && stock <= 5;
                   const isOut    = stock === 0;

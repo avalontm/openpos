@@ -1,88 +1,113 @@
 import React from "react";
 import { render } from "ink";
-import { PosScreen }     from "./modules/pos/PosScreen.js";
-import { LoginScreen }   from "./modules/pos/LoginScreen.js";
+import { PosScreen } from "./modules/pos/PosScreen.js";
+import { LoginScreen } from "./modules/pos/LoginScreen.js";
+import { TermsScreen } from "./modules/pos/TermsScreen.js";
 import { LoadingScreen, preloadBanner, type LoadTask } from "./modules/pos/LoadingScreen.js";
-import { initDb }        from "./db/client.js";
-import { runCLI }        from "./cli.js";
-import path              from "path";
-import { fileURLToPath } from "url";
+import { initDb, logger, getBillingConfig, billingService, getConfig, CONFIG_KEYS } from "@openpos/shared";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
-
-// ── Capture terminal size BEFORE switching to alternate screen ───────────────
-// Windows Terminal reports correct dimensions in the main buffer.
-// After switching to alternate screen, size detection can fail temporarily.
 const initialCols = process.stdout.columns || 80;
 const initialRows = process.stdout.rows || 24;
-
-// Store globally for useLayout hook to use as initial values
 (globalThis as unknown as { __TERM_COLS__: number; __TERM_ROWS__: number }).__TERM_COLS__ = initialCols;
 (globalThis as unknown as { __TERM_COLS__: number; __TERM_ROWS__: number }).__TERM_ROWS__ = initialRows;
+logger.info(`App initiating — terminal ${initialCols}x${initialRows}`);
 
-// ── CLI mode — skip interactive UI entirely ────────────────────────────────────
-const isCliMode = await runCLI();
-if (isCliMode === true) process.exit(0);
+logger.info("Modo TUI — iniciando interfaz de terminal");
 
-// ── Alternate screen buffer ────────────────────────────────────────────────────
-process.stdout.write("\x1b[?1049h");  // Activate alternate screen
-process.stdout.write("\x1b[3J");       // Clear screen + scrollback
-process.stdout.write("\x1b[H");        // Cursor to home (0,0)
-// Write space to force terminal to commit to dimensions
+process.stdout.write("\x1b[?1049h");
+process.stdout.write("\x1b[3J");
+process.stdout.write("\x1b[H");
 process.stdout.write(" \r");
 
 function cleanup() {
   process.stdout.write("\x1b[?1049l");
 }
-process.on("exit",   cleanup);
-process.on("SIGINT",  cleanup);
+process.on("exit", cleanup);
+process.on("SIGINT", cleanup);
 process.on("SIGTERM", cleanup);
 
-// ── App shell ──────────────────────────────────────────────────────────────────
-type AppState = "loading" | "login" | "pos";
+type AppState = "loading" | "terms" | "login" | "pos";
 
-function App() {
+export function App() {
   const [state, setState] = React.useState<AppState>("loading");
 
-  // ── Loading tasks — define what to preload ─────────────────────────────────
-  // Each task runs sequentially and is shown in the loading screen list.
-  // Add more tasks here (config validation, network checks, etc.) as needed.
   const tasks = React.useMemo<LoadTask[]>(() => [
     {
       label: "Initializing database",
-      run:   async () => { initDb(); },
+      run: async () => {
+        logger.info("Task: initDb");
+        initDb();
+      },
     },
     {
       label: "Loading assets",
-      run:   async () => {
+      run: async () => {
         const cols = process.stdout.columns || 80;
+        logger.info(`Task: preloadBanner cols=${cols}`);
         await preloadBanner(cols);
       },
     },
     {
       label: "Checking configuration",
-      run:   async () => {
-        // Add any config validation here
+      run: async () => {
+        logger.info("Task: checking configuration");
         await new Promise(r => setTimeout(r, 80));
       },
     },
+    {
+      label: "Initializing billing service",
+      run: async () => {
+        const billingConfig = getBillingConfig();
+        
+        if (billingConfig?.apiKey && billingConfig?.provider) {
+          logger.info("Task: initBilling", { 
+            provider: billingConfig.provider, 
+            sandbox: billingConfig.sandbox 
+          });
+          
+          await billingService.initialize(
+            billingConfig.provider as "facturapi",
+            billingConfig.apiKey,
+            billingConfig.sandbox ?? false
+          );
+          
+          logger.info("Billing service initialized", { provider: billingConfig.provider });
+        } else {
+          logger.info("Task: initBilling - no billing config in config.json, skipping");
+        }
+      },
+    },
   ], []);
+
+  const handleLoadingReady = React.useCallback(() => {
+    const termsAccepted = getConfig(CONFIG_KEYS.TERMS_ACCEPTED);
+    if (termsAccepted === "true") {
+      logger.info("LoadingScreen → login (terms accepted)");
+      setState("login");
+    } else {
+      logger.info("LoadingScreen → terms");
+      setState("terms");
+    }
+  }, []);
 
   if (state === "loading") {
     return (
       <LoadingScreen
         tasks={tasks}
-        onReady={() => setState("login")}
+        onReady={handleLoadingReady}
       />
     );
   }
 
-  if (state === "login") {
-    return <LoginScreen onLogin={() => setState("pos")} />;
+  if (state === "terms") {
+    return <TermsScreen onAccept={() => { logger.info("TermsScreen → login"); setState("login"); }} />;
   }
 
-  return <PosScreen onLogout={() => setState("login")} />;
+  if (state === "login") {
+    return <LoginScreen onLogin={() => { logger.info("LoginScreen → pos"); setState("pos"); }} />;
+  }
+
+  return <PosScreen onLogout={() => { logger.info("PosScreen → login"); setState("login"); }} />;
 }
 
-render(<App />);
+export { App as default };

@@ -7,14 +7,19 @@
     "jsxImportSource": "react",
     "strict": true,
     "skipLibCheck": true,
+    "noImplicitAny": false,
     "outDir": "dist",
     "baseUrl": ".",
     "paths": {
+      "@openpos/shared": ["./src/shared/src"],
+      "@openpos/shared/*": ["./src/shared/src/*"],
       "@db/*": ["src/db/*"],
-      "@store/*": ["src/store/*"],
-      "@shared/*": ["src/shared/*"],
+      "@store/*": ["src/shared/src/store/*"],
+      "@shared/*": ["src/shared/src/*"],
       "@modules/*": ["src/modules/*"]
-    }
+    },
+    "types": ["bun-types", "node"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["node_modules"]
 }

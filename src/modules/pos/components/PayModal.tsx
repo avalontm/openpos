@@ -1,11 +1,27 @@
 import React from "react";
-import { Box, Text, useInput } from "ink";
-import { useCart } from "../../../store/cart.js";
-import { theme, fmt } from "../../../shared/theme.js";
+import { Box, Text, useInput, usePaste } from "ink";
+import { useCart, theme, fmt, useWindowManager, listClients } from "@openpos/shared";
+
+const WINDOW_ID = "pay-modal";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 export type Method  = "efectivo" | "tarjeta" | "transf." | "qr/codi";
-type PayStep        = "method" | "cash" | "change";
+type PayStep        = "method" | "search" | "invoice" | "cash" | "change";
+
+export interface InvoiceData {
+  rfc: string;
+  razonSocial: string;
+  email: string;
+  usoCfdi: string;
+}
+
+const USO_CFDI_OPTIONS = [
+  { code: "G01", label: "Gastos en general" },
+  { code: "I03", label: "Equipo de transporte" },
+  { code: "I04", label: "Equipo de computo" },
+  { code: "D01", label: "Donativos" },
+  { code: "P01", label: "Por definir" },
+];
 
 const PAY_METHODS: Method[] = ["efectivo", "tarjeta", "transf.", "qr/codi"];
 
@@ -32,7 +48,7 @@ type Props = {
   active:    boolean;
   marginLeft: number;
   marginTop:  number;
-  onConfirm: (method: Method, received: number, change: number) => void;
+  onConfirm: (method: Method, received: number, change: number, invoiceData?: InvoiceData | null) => void;
   onCancel:  () => void;
 };
 
@@ -60,7 +76,7 @@ function AmountRow({
   cursor?: boolean;
 }) {
   return (
-    <Box justifyContent="space-between" width={30}>
+    <Box justifyContent="space-between" width={40}>
       <Text color={theme.textMuted}>{label}</Text>
       <Text color={valueColor} bold={bold}>
         {value}{cursor ? "▌" : ""}
@@ -72,33 +88,194 @@ function AmountRow({
 // ── Componente principal ───────────────────────────────────────────────────────
 export function PayModal({ active, marginLeft, marginTop, onConfirm, onCancel }: Props) {
   const { total } = useCart();
+  const isWindowActive = useWindowManager(state => state.isWindowActive);
 
-  const [step,     setStep]     = React.useState<PayStep>("method");
-  const [cursor,   setCursor]   = React.useState(0);
-  const [received, setReceived] = React.useState("");
+  const [step,       setStep]       = React.useState<PayStep>("method");
+  const [cursor,     setCursor]     = React.useState(0);
+  const [received,   setReceived]   = React.useState("");
+  const [wantInvoice, setWantInvoice] = React.useState(false);
+  const [invoiceData, setInvoiceData] = React.useState<InvoiceData | null>(null);
+  const [invoiceField, setInvoiceField] = React.useState(0);
 
-  // Reset al activarse
+  const [invRfc, setInvRfc] = React.useState("");
+  const [invRazon, setInvRazon] = React.useState("");
+  const [invEmail, setInvEmail] = React.useState("");
+
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [searchResults, setSearchResults] = React.useState<Array<{rfc: string; razonSocial: string; email: string | null}>>([]);
+  const [searchCursor, setSearchCursor] = React.useState(0);
+
+  const doSearch = React.useCallback((query: string) => {
+    const results = listClients(query || undefined);
+    setSearchResults(results.slice(0, 8));
+    setSearchCursor(0);
+  }, []);
+
+  React.useEffect(() => {
+    doSearch(searchQuery);
+  }, [searchQuery, doSearch]);
+
+  // Window registration and form reset
   React.useEffect(() => {
     if (active) {
+      useWindowManager.getState().registerWindow(WINDOW_ID);
       setStep("method");
       setCursor(0);
       setReceived("");
+      setWantInvoice(false);
+      setInvoiceData(null);
+      setInvRfc("");
+      setInvRazon("");
+      setInvEmail("");
+      setInvoiceField(0);
+      setSearchQuery("");
+      setSearchResults([]);
+      setSearchCursor(0);
     }
+    return () => {
+      useWindowManager.getState().unregisterWindow(WINDOW_ID);
+    };
   }, [active]);
 
-  useInput((input, key) => {
-    if (!active) return;
+  // ── Paste handler (Ctrl+V, Shift+Insert, etc.) ─────────────────────────────
+  usePaste((text) => {
+    if (!isWindowActive(WINDOW_ID)) return;
+    if (step !== "invoice") return;
+
+    const lines = text.trim().split(/\n|,|;/).map((s: string) => s.trim()).filter(Boolean);
+
+    if (lines.length >= 3) {
+      setInvRfc(lines[0]!.toUpperCase().slice(0, 14));
+      setInvRazon(lines[1]!.toUpperCase().slice(0, 100));
+      setInvEmail(lines[2]!.toLowerCase().slice(0, 100));
+    } else {
+      for (const char of text) {
+        if (invoiceField === 0 && /^[A-Za-z0-9]$/.test(char)) {
+          setInvRfc(r => (r + char).slice(0, 14));
+        } else if (invoiceField === 1 && /^[A-Za-z0-9 ]$/.test(char)) {
+          setInvRazon(r => (r + char).slice(0, 100));
+        } else if (invoiceField === 2 && /^[A-Za-z0-9@._-]$/.test(char)) {
+          setInvEmail(e => (e + char).slice(0, 100));
+        }
+      }
+    }
+  });
+
+  useInput(async (input, key) => {
+    if (!isWindowActive(WINDOW_ID)) return;
+
+    if (key.tab) {
+      if (step === "invoice") {
+        setInvoiceField(f => (f + 1) % 3);
+      }
+      return;
+    }
 
     // ── Paso 1: Selección de método ──────────────────────────────────────────
     if (step === "method") {
+      if (input === "i" || input === "I" || input === "f" || input === "F") {
+        setWantInvoice(!wantInvoice);
+        if (!wantInvoice) {
+          setInvRfc("");
+          setInvRazon("");
+          setInvEmail("");
+        } else {
+          setSearchQuery("");
+          setStep("search");
+          return;
+        }
+        return;
+      }
       if (key.upArrow   || input === "1") setCursor(c => Math.max(0, c - 1));
       if (key.downArrow || input === "2") setCursor(c => Math.min(PAY_METHODS.length - 1, c + 1));
       if (key.return || input === "4") {
         const m = PAY_METHODS[cursor]!;
+        if (wantInvoice && !invoiceData) {
+          setStep("search");
+          setSearchQuery("");
+          return;
+        }
         if (m === "efectivo") { setStep("cash"); setReceived(""); }
-        else { onConfirm(m, 0, 0); }
+        else { onConfirm(m, 0, 0, wantInvoice ? invoiceData : null); }
       }
       if (key.escape) onCancel();
+      return;
+    }
+
+    // ── Paso 1.3: Buscar cliente ─────────────────────────────────────────────
+    if (step === "search") {
+      if (key.escape) {
+        setWantInvoice(false);
+        setStep("method");
+        return;
+      }
+      if (key.upArrow) setSearchCursor(c => Math.max(0, c - 1));
+      if (key.downArrow) setSearchCursor(c => Math.min(searchResults.length - 1, c + 1));
+      if (key.return || input === "4") {
+        const client = searchResults[searchCursor];
+        if (client) {
+          setInvRfc(client.rfc);
+          setInvRazon(client.razonSocial);
+          setInvEmail(client.email || "");
+          setStep("invoice");
+          setInvoiceField(0);
+        }
+        return;
+      }
+      if (input === "c" || input === "C") {
+        setStep("invoice");
+        setInvoiceField(0);
+        return;
+      }
+      if (/^[A-Za-z0-9 ]$/.test(input)) {
+        setSearchQuery(q => q + input);
+        return;
+      }
+      if (input === "3" || key.backspace) {
+        setSearchQuery(q => q.slice(0, -1));
+        return;
+      }
+      return;
+    }
+
+    // ── Paso 1.5: Datos de factura ───────────────────────────────────────────
+    if (step === "invoice") {
+      if (key.escape) {
+        setWantInvoice(false);
+        setInvoiceData(null);
+        setStep("method");
+        return;
+      }
+      if (key.return || input === "4") {
+        const finalRfc = invRfc.trim() || "XAXX010101000";
+        const finalRazon = invRazon.trim() || "PÚBLICO EN GENERAL";
+        const finalEmail = invEmail.trim() || "";
+        const data: InvoiceData = {
+          rfc: finalRfc.toUpperCase(),
+          razonSocial: finalRazon.toUpperCase(),
+          email: finalEmail.toLowerCase(),
+          usoCfdi: "G01",
+        };
+        setInvoiceData(data);
+        const m = PAY_METHODS[cursor]!;
+        if (m === "efectivo") { setStep("cash"); setReceived(""); }
+        else { onConfirm(m, 0, 0, data); }
+        return;
+      }
+      if (key.upArrow) setInvoiceField(f => Math.max(0, f - 1));
+      if (key.downArrow) setInvoiceField(f => Math.min(2, f + 1));
+      if (invoiceField === 0 && /^[A-Za-z0-9]$/.test(input)) {
+        setInvRfc(r => (r + input).slice(0, 14));
+      } else if (invoiceField === 1 && /^[A-Za-z0-9 ]$/.test(input)) {
+        setInvRazon(r => (r + input).slice(0, 100));
+      } else if (invoiceField === 2 && /^[A-Za-z0-9@._-]$/.test(input)) {
+        setInvEmail(e => (e + input).slice(0, 100));
+      }
+      if (input === "3" || key.backspace) {
+        if (invoiceField === 0) setInvRfc(r => r.slice(0, -1));
+        if (invoiceField === 1) setInvRazon(r => r.slice(0, -1));
+        if (invoiceField === 2) setInvEmail(e => e.slice(0, -1));
+      }
       return;
     }
 
@@ -122,7 +299,7 @@ export function PayModal({ active, marginLeft, marginTop, onConfirm, onCancel }:
       if (key.return || input === "4" || input === "s") {
         const rec = parseFloat(received) || 0;
         const tot = total();
-        onConfirm("efectivo", rec, Math.max(0, rec - tot));
+        onConfirm("efectivo", rec, Math.max(0, rec - tot), wantInvoice ? invoiceData : null);
         setStep("method");
         setReceived("");
         return;
@@ -144,7 +321,9 @@ export function PayModal({ active, marginLeft, marginTop, onConfirm, onCancel }:
 
   // ── Título dinámico ──────────────────────────────────────────────────────────
   const TITLES: Record<PayStep, string> = {
-    method: "━━  MÉTODO DE PAGO  ━━",
+    method:  "━━  MÉTODO DE PAGO  ━━",
+    search:  "━━  BUSCAR CLIENTE  ━━",
+    invoice: "━━  DATOS FACTURA  ━━",
     cash:   "━━  INGRESO EFECTIVO  ━━",
     change: "━━  CONFIRMAR VENTA  ━━",
   };
@@ -156,6 +335,9 @@ export function PayModal({ active, marginLeft, marginTop, onConfirm, onCancel }:
     : step === "cash" ? theme.amber
     : methCol;
 
+  const MODAL_WIDTH = 52;
+  const MODAL_HEIGHT = 30;
+
   return (
     <Box
       position="absolute"
@@ -165,12 +347,16 @@ export function PayModal({ active, marginLeft, marginTop, onConfirm, onCancel }:
       borderStyle="round"
       borderColor={borderColor}
       backgroundColor={theme.bgPanel}
-      width={36}
+      width={MODAL_WIDTH}
+      height={MODAL_HEIGHT}
       paddingX={2}
       paddingY={1}
     >
       {/* ── Título ────────────────────────────────────────────────────────── */}
       <SectionTitle label={TITLES[step]} color={borderColor} />
+
+      {/* ── Contenido principal (crece para llenar espacio) ───────────────── */}
+      <Box flexDirection="column" flexGrow={1} gap={0}>
 
       {/* ══════════════════════════════════════════════════════════════════════
           PASO 1 — Selección de método
@@ -184,6 +370,19 @@ export function PayModal({ active, marginLeft, marginTop, onConfirm, onCancel }:
             <Text bold color={theme.white}>{fmt.money(tot)}</Text>
           </Box>
 
+          {/* Toggle Facturar */}
+          <Box
+            width={40}
+            paddingX={1}
+            marginBottom={1}
+            borderStyle={wantInvoice ? "single" : undefined}
+            borderColor={wantInvoice ? theme.blue : undefined}
+          >
+            <Text color={wantInvoice ? theme.blue : theme.textMuted} bold={wantInvoice}>
+              {wantInvoice ? "▸" : "  "}☑ FACTURAR CFDI 4.0
+            </Text>
+          </Box>
+
           {/* Opciones de método */}
           {PAY_METHODS.map((m, i) => {
             const sel  = i === cursor;
@@ -193,13 +392,13 @@ export function PayModal({ active, marginLeft, marginTop, onConfirm, onCancel }:
             return (
               <Box
                 key={m}
-                width={30}
+                width={40}
                 paddingX={1}
                 marginBottom={0}
                 borderStyle={sel ? "single" : undefined}
                 borderColor={sel ? col : undefined}
               >
-                <Box flexDirection="row" gap={2} width={26}>
+                <Box flexDirection="row" gap={2} width={36}>
                   <Text color={sel ? col : theme.textDim} bold={sel}>
                     {sel ? "▸" : " "}{ico}
                   </Text>
@@ -215,20 +414,78 @@ export function PayModal({ active, marginLeft, marginTop, onConfirm, onCancel }:
               </Box>
             );
           })}
+        </Box>
+      )}
 
-          {/* Hints */}
-          <Box marginTop={1} justifyContent="center" gap={2}>
-            <Text color={theme.textDim}>
-              <Text color={theme.textMuted} bold>↑↓</Text>{" elegir"}
+      {/* ══════════════════════════════════════════════════════════════════════
+          PASO 1.3 — Buscar cliente
+         ══════════════════════════════════════════════════════════════════════ */}
+      {step === "search" && (
+        <Box flexDirection="column" gap={0}>
+          <Text color={theme.textMuted} bold>Buscar por RFC o razón social:</Text>
+          
+          <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.blue}>
+            <Text color={theme.blue}>▸ {searchQuery}</Text>
+            <Text color={theme.blue}>▌</Text>
+          </Box>
+
+          <Box flexDirection="column" marginTop={1} gap={0}>
+            {searchResults.length === 0 ? (
+              <Text color={theme.textDim}>Sin resultados (C: crear nuevo)</Text>
+            ) : (
+              searchResults.map((client, i) => (
+                <Box
+                  key={client.rfc}
+                  width={48}
+                  paddingX={1}
+                  borderStyle={searchCursor === i ? "single" : undefined}
+                  borderColor={searchCursor === i ? theme.green : undefined}
+                >
+                  <Box width={20}>
+                    <Text color={searchCursor === i ? theme.green : theme.textMuted}>
+                      {searchCursor === i ? "▸ " : "  "}{client.rfc}
+                    </Text>
+                  </Box>
+                  <Text color={searchCursor === i ? theme.white : theme.textSec}>
+                    {client.razonSocial.slice(0, 28)}
+                  </Text>
+                </Box>
+              ))
+            )}
+          </Box>
+        </Box>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          PASO 1.5 — Datos de factura
+         ══════════════════════════════════════════════════════════════════════ */}
+      {step === "invoice" && (
+        <Box flexDirection="column" gap={0}>
+
+          <Text color={theme.textMuted}>Presiona ENTER cuando completes</Text>
+
+          <Box marginTop={1}>
+            <Text color={invoiceField === 0 ? theme.blue : theme.textMuted}>
+              {invoiceField === 0 ? "▸" : " "}RFC:
             </Text>
-            <Text color={theme.textDim}>{"·"}</Text>
-            <Text color={theme.textDim}>
-              <Text color={theme.textMuted} bold>Enter</Text>{" confirmar"}
+            <Text> {invRfc}</Text>
+            {invoiceField === 0 && <Text color={theme.blue}>▌</Text>}
+          </Box>
+
+          <Box>
+            <Text color={invoiceField === 1 ? theme.blue : theme.textMuted}>
+              {invoiceField === 1 ? "▸" : " "}Nombre/Razón Social:
             </Text>
-            <Text color={theme.textDim}>{"·"}</Text>
-            <Text color={theme.textDim}>
-              <Text color={theme.textMuted} bold>Esc</Text>{" volver"}
+            <Text> {invRazon}</Text>
+            {invoiceField === 1 && <Text color={theme.blue}>▌</Text>}
+          </Box>
+
+          <Box>
+            <Text color={invoiceField === 2 ? theme.blue : theme.textMuted}>
+              {invoiceField === 2 ? "▸" : " "}Email:
             </Text>
+            <Text> {invEmail}</Text>
+            {invoiceField === 2 && <Text color={theme.blue}>▌</Text>}
           </Box>
         </Box>
       )}
@@ -287,15 +544,6 @@ export function PayModal({ active, marginLeft, marginTop, onConfirm, onCancel }:
               </Box>
             ))}
           </Box>
-
-          {/* Hint */}
-          <Box marginTop={1} justifyContent="center">
-            <Text color={theme.textDim}>
-              <Text color={theme.textMuted} bold>0-9</Text>{" ingresar  "}
-              <Text color={theme.textMuted} bold>←/3</Text>{" borrar  "}
-              <Text color={theme.textMuted} bold>Enter</Text>{" confirmar"}
-            </Text>
-          </Box>
         </Box>
       )}
 
@@ -309,13 +557,13 @@ export function PayModal({ active, marginLeft, marginTop, onConfirm, onCancel }:
           <AmountRow label="Total:"     value={fmt.money(tot)} valueColor={theme.white} bold />
           <AmountRow label="Recibido:"  value={fmt.money(rec)} valueColor={theme.textSec} />
           <Box>
-            <Text color={theme.textDim}>{"─".repeat(30)}</Text>
+            <Text color={theme.textDim}>{"─".repeat(40)}</Text>
           </Box>
 
           {/* Cambio destacado */}
           <Box
             justifyContent="space-between"
-            width={30}
+            width={40}
             borderStyle="single"
             borderColor={theme.green}
             paddingX={1}
@@ -329,15 +577,21 @@ export function PayModal({ active, marginLeft, marginTop, onConfirm, onCancel }:
           <Box justifyContent="center" marginTop={1}>
             <Text bold color={theme.green}>{"[ Enter ]  Confirmar venta  ✓"}</Text>
           </Box>
-
-          {/* Hint */}
-          <Box justifyContent="center" marginTop={0}>
-            <Text color={theme.textDim}>
-              <Text color={theme.textMuted} bold>Esc</Text>{" volver al monto"}
-            </Text>
-          </Box>
         </Box>
       )}
+
+      </Box>
+
+      {/* ── Hints al bottom ───────────────────────────────────────────────────── */}
+      <Box justifyContent="center">
+        <Text color={theme.textDim}>
+          {step === "method" && "I facturar · ↑↓ elegir · Enter confirmar · Esc"}
+          {step === "search" && "↑↓ sel · Ent elegir · C nuevo · Esc"}
+          {step === "invoice" && "↑↓ campo · TAB sig · Esc"}
+          {step === "cash" && "0-9 monto · ← borrar · Enter"}
+          {step === "change" && "Enter/S confirmar · Esc"}
+        </Text>
+      </Box>
 
     </Box>
   );
