@@ -2,6 +2,25 @@
 
 Sistema de punto de venta para terminal (TUI) construido con Bun, Ink, Zustand y Drizzle ORM.
 
+## Documentación
+
+Para información detallada sobre el proyecto, consulta la documentación en la carpeta `docs/`:
+
+### Documentación General
+- [Documentación General](docs/documentacion-general.md) - Resumen completo del proyecto
+- [Esquema de Base de Datos](docs/esquema-base-datos.md) - Detalles de tablas y relaciones
+- [Referencia de API](docs/referencia-api.md) - CLI, servicios y utilidades
+- [Guía de Desarrollo](docs/guia-desarrollo.md) - Setup y desarrollo
+
+### Planificación y Gestión de Proyecto
+- [Release Plan Ejemplo](docs/release-plan-ejemplo.md) - Plan de lanzamiento v1.0.0 con 8 sprints
+- [Guía Rápida Jira](docs/guia-rapida-jira.md) - Setup paso a paso de Jira (~30 minutos)
+- [Cómo Encontrar Componentes en Jira](docs/como-encontrar-componentes-jira.md) - Si no encuentras la sección de componentes
+- [Agregar Tipos de Actividades en Jira](docs/agregar-tipos-actividades-jira.md) - Cómo crear nuevos tipos de issues
+- [Configuración Jira Ejemplo](docs/configuracion-jira-ejemplo.md) - Estructura y setup completo de Jira
+- [Sprint 1 Detallado](docs/sprint-1-detallado.md) - Todas las tareas del Sprint 1 con detalles completos
+- [Historias de Usuario Detalladas](docs/historias-usuario-detalladas.md) - User stories con criterios de aceptación
+
 ## Screenshots
 
 ### Pantalla de Login
@@ -123,19 +142,6 @@ Abre un menú interactivo para configurar:
 
 ### Línea de comandos (CLI)
 
-<<<<<<< HEAD
-```bash
-pos --help              # Mostrar ayuda
-pos --version           # Mostrar versión
-pos --settings          # Abrir configuración TUI
-pos import products     # Importar productos desde CSV
-pos export products     # Exportar productos a CSV
-pos seed                # Insertar productos de ejemplo
-pos add user <username> <pin> [--role]  # Agregar usuario
-pos config get          # Ver configuración
-pos config config set <key> <value>  # Actualizar configuración
-```
-=======
 Puedes ejecutar los comandos directamente o a través de Docker:
 
 | Comando | Ejecución Local | Ejecución Docker |
@@ -148,7 +154,6 @@ Puedes ejecutar los comandos directamente o a través de Docker:
 | Usuario | `pos.exe add user <user> <pin>` | `docker-compose run --rm app add user <user> <pin>` |
 | Config Get | `pos.exe config get` | `docker-compose run --rm app config get` |
 | Config Set | `pos.exe config set <k> <v>` | `docker-compose run --rm app config set <k> <v>` |
->>>>>>> 2ae9ae81a7c2b3405f737f12daecead51c952e57
 
 ### Importar Productos
 
