@@ -1,6 +1,6 @@
 # Documentación General del Proyecto OPENPOS
 
-## Resumen
+## Resumen OP-007
 
 **OPENPOS** es un sistema completo de punto de venta (POS) para terminal, construido con TypeScript/React, diseñado para operaciones minoristas modernas con características avanzadas como impresión térmica, facturación CFDI y programas de fidelidad.
 
@@ -292,37 +292,3 @@ pos.exe config set <key> <value>
 4. **Facturación lista para producción**: Cumplimiento total CFDI para autoridad fiscal mexicana (SAT)
 5. **Arquitectura modular**: Separación limpia de preocupaciones (stores, servicios, componentes, db)
 6. **Seguridad de tipos**: Compilación completa TypeScript; Drizzle proporciona inferencia de tipos a nivel de esquema
-
-## Flujo de Trabajo de Mantenimiento
-
-### Descripción General
-El flujo de trabajo adoptado para la gestión del mantenimiento integra SCRUM en Jira para la planificación y seguimiento de tareas, con GIT como base para el control de versiones y colaboración en código. Esto asegura un proceso ágil, rastreable y adaptable a distintos contextos (desarrollo, corrección de bugs, mejoras).
-
-### Metodología SCRUM
-- **Roles**: Product Owner (define backlog), Scrum Master (facilita procesos), Equipo de Desarrollo (implementa).
-- **Artefactos**: Product Backlog (en Jira), Sprint Backlog, Incremento.
-- **Eventos**: Sprint Planning, Daily Standup, Sprint Review, Sprint Retrospective (cada 2-4 semanas).
-- **Herramientas**: Jira para boards SCRUM, epics, user stories y burndown charts.
-
-### Etapas del Flujo
-1. **Planificación (Sprint Planning en Jira)**: Seleccionar user stories del backlog, estimar con story points, asignar a sprint.
-2. **Desarrollo (GIT como base)**: Crear rama feature desde `develop` (e.g., `feature/US-123-nueva-funcionalidad`), implementar cambios, commits descriptivos.
-3. **Revisión y QA**: Pull Request en GIT para revisión de código; ejecutar tests locales y en CI si configurado.
-4. **Integración**: Merge a `develop` tras aprobación; actualizar Jira con progreso.
-5. **Despliegue (Sprint Review)**: Merge a `main` para release; desplegar con Docker si aplica.
-6. **Retrospectiva**: Revisar sprint en Jira, ajustar procesos.
-
-### Control de Versiones con GIT
-- **Ramas Principales**: `main` (producción), `develop` (integración).
-- **Ramas de Trabajo**: `feature/`, `bugfix/`, `hotfix/` (desde `main` para emergencias).
-- **Commits**: Mensajes claros (e.g., "Fix: corregir cálculo de impuestos - US-456").
-- **Integración con Jira**: Referenciar issues en commits (e.g., "US-123: agregar validación de RFC").
-
-### Herramientas y Políticas
-- **Seguimiento**: Jira para issues, sprints y métricas SCRUM.
-- **CI/CD**: Propuesto GitHub Actions o similar para automatizar builds/tests (integrable con Jira via webhooks).
-- **Pruebas**: Agregar unitarias/integración (e.g., con Jest); ejecutar en cada PR.
-- **Versionado**: SemVer; tags en GIT para releases, con changelogs.
-- **Políticas**: No merges directos a `main`; revisiones obligatorias; firmas de commits opcionales.
-
-Este flujo promueve mantenibilidad, colaboración y alineación con SCRUM para entregas incrementales de valor.
